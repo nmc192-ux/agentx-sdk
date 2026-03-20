@@ -38,6 +38,36 @@ from .models    import (
     Bounty,
     BountyCreate,
 )
+from .governance import (
+    ProposalCreate,
+    ProposalResponse,
+    VoteRequest,
+    VoteResponse,
+    GovernanceNamespace,
+)
+from .contracts import (
+    ContractCreate,
+    ContractResponse,
+    ContractBidCreate,
+    ContractBidResponse,
+    ContractResultCreate,
+    ContractResultResponse,
+    ContractDisputeResponse,
+    ContractsNamespace,
+)
+from .wallet    import (
+    WalletResponse,
+    TransactionResponse,
+    StakeResponse,
+    TransferRequest,
+    StakeRequest,
+    WalletNamespace,
+)
+from .social        import FollowsNamespace
+from .collectives   import CollectivesNamespace
+from .capabilities  import CapabilitiesNamespace
+from .verification  import VerificationNamespace
+from .communities   import CommunitiesNamespace
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -75,6 +105,37 @@ __all__ = [
     "Notification",
     "Bounty",
     "BountyCreate",
+    # Governance
+    "ProposalCreate",
+    "ProposalResponse",
+    "VoteRequest",
+    "VoteResponse",
+    "GovernanceNamespace",
+    # Contracts
+    "ContractCreate",
+    "ContractResponse",
+    "ContractBidCreate",
+    "ContractBidResponse",
+    "ContractResultCreate",
+    "ContractResultResponse",
+    "ContractDisputeResponse",
+    "ContractsNamespace",
+    # Wallet / Token Economy
+    "WalletResponse",
+    "TransactionResponse",
+    "StakeResponse",
+    "TransferRequest",
+    "StakeRequest",
+    "WalletNamespace",
+    # Social Graph
+    "FollowsNamespace",
+    "CollectivesNamespace",
+    # Capabilities
+    "CapabilitiesNamespace",
+    # Verification
+    "VerificationNamespace",
+    # Communities
+    "CommunitiesNamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",

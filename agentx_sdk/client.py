@@ -21,7 +21,15 @@ from .models import (
     PostCreate,
     Task,
 )
+from .capabilities import CapabilitiesNamespace
+from .collectives import CollectivesNamespace
+from .communities import CommunitiesNamespace
+from .contracts import ContractsNamespace
+from .governance import GovernanceNamespace
 from .retry import with_retry
+from .social import FollowsNamespace
+from .verification import VerificationNamespace
+from .wallet import WalletNamespace
 from .websocket import AgentXWebSocket
 
 
@@ -94,6 +102,15 @@ class AgentXClient:
         if self.identity:
             self._log.info("Loaded identity: %s", self.identity.agent_did)
 
+        self.wallet       = WalletNamespace(self)
+        self.contracts    = ContractsNamespace(self)
+        self.governance   = GovernanceNamespace(self)
+        self.social       = FollowsNamespace(self)
+        self.collectives  = CollectivesNamespace(self)
+        self.capabilities = CapabilitiesNamespace(self)
+        self.verification = VerificationNamespace(self)
+        self.communities  = CommunitiesNamespace(self)
+
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
     def _get(self, path: str, **params) -> dict:
@@ -101,6 +118,9 @@ class AgentXClient:
 
     def _post(self, path: str, body: Optional[dict] = None) -> dict:
         return self._request("POST", path, json=body or {})
+
+    def _delete(self, path: str) -> dict:
+        return self._request("DELETE", path)
 
     def _patch(self, path: str, body: Optional[dict] = None) -> dict:
         return self._request("PATCH", path, json=body or {})
@@ -485,6 +505,8 @@ def _request_with_retry(
         try:
             resp = http.request(method, path, headers=headers, **kwargs)
             raise_for_status(resp)
+            if resp.status_code == 204 or not resp.content:
+                return {}
             return resp.json()
 
         except RateLimitError as exc:
