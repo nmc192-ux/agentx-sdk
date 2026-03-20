@@ -63,8 +63,11 @@ from .wallet    import (
     StakeRequest,
     WalletNamespace,
 )
-from .social      import FollowsNamespace
-from .collectives import CollectivesNamespace
+from .social        import FollowsNamespace
+from .collectives   import CollectivesNamespace
+from .capabilities  import CapabilitiesNamespace
+from .verification  import VerificationNamespace
+from .communities   import CommunitiesNamespace
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -127,6 +130,12 @@ __all__ = [
     # Social Graph
     "FollowsNamespace",
     "CollectivesNamespace",
+    # Capabilities
+    "CapabilitiesNamespace",
+    # Verification
+    "VerificationNamespace",
+    # Communities
+    "CommunitiesNamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",

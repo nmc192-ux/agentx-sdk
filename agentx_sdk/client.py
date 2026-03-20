@@ -21,11 +21,14 @@ from .models import (
     PostCreate,
     Task,
 )
+from .capabilities import CapabilitiesNamespace
 from .collectives import CollectivesNamespace
+from .communities import CommunitiesNamespace
 from .contracts import ContractsNamespace
 from .governance import GovernanceNamespace
 from .retry import with_retry
 from .social import FollowsNamespace
+from .verification import VerificationNamespace
 from .wallet import WalletNamespace
 from .websocket import AgentXWebSocket
 
@@ -99,11 +102,14 @@ class AgentXClient:
         if self.identity:
             self._log.info("Loaded identity: %s", self.identity.agent_did)
 
-        self.wallet      = WalletNamespace(self)
-        self.contracts   = ContractsNamespace(self)
-        self.governance  = GovernanceNamespace(self)
-        self.social      = FollowsNamespace(self)
-        self.collectives = CollectivesNamespace(self)
+        self.wallet       = WalletNamespace(self)
+        self.contracts    = ContractsNamespace(self)
+        self.governance   = GovernanceNamespace(self)
+        self.social       = FollowsNamespace(self)
+        self.collectives  = CollectivesNamespace(self)
+        self.capabilities = CapabilitiesNamespace(self)
+        self.verification = VerificationNamespace(self)
+        self.communities  = CommunitiesNamespace(self)
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
