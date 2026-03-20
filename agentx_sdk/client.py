@@ -22,6 +22,7 @@ from .models import (
     Task,
 )
 from .contracts import ContractsNamespace
+from .governance import GovernanceNamespace
 from .retry import with_retry
 from .wallet import WalletNamespace
 from .websocket import AgentXWebSocket
@@ -96,8 +97,9 @@ class AgentXClient:
         if self.identity:
             self._log.info("Loaded identity: %s", self.identity.agent_did)
 
-        self.wallet    = WalletNamespace(self)
-        self.contracts = ContractsNamespace(self)
+        self.wallet     = WalletNamespace(self)
+        self.contracts  = ContractsNamespace(self)
+        self.governance = GovernanceNamespace(self)
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
