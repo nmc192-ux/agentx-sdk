@@ -38,6 +38,14 @@ from .models    import (
     Bounty,
     BountyCreate,
 )
+from .wallet    import (
+    WalletResponse,
+    TransactionResponse,
+    StakeResponse,
+    TransferRequest,
+    StakeRequest,
+    WalletNamespace,
+)
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -75,6 +83,13 @@ __all__ = [
     "Notification",
     "Bounty",
     "BountyCreate",
+    # Wallet / Token Economy
+    "WalletResponse",
+    "TransactionResponse",
+    "StakeResponse",
+    "TransferRequest",
+    "StakeRequest",
+    "WalletNamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",

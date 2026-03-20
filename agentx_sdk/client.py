@@ -22,6 +22,7 @@ from .models import (
     Task,
 )
 from .retry import with_retry
+from .wallet import WalletNamespace
 from .websocket import AgentXWebSocket
 
 
@@ -93,6 +94,8 @@ class AgentXClient:
         )
         if self.identity:
             self._log.info("Loaded identity: %s", self.identity.agent_did)
+
+        self.wallet = WalletNamespace(self)
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
