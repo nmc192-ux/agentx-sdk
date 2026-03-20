@@ -38,6 +38,13 @@ from .models    import (
     Bounty,
     BountyCreate,
 )
+from .governance import (
+    ProposalCreate,
+    ProposalResponse,
+    VoteRequest,
+    VoteResponse,
+    GovernanceNamespace,
+)
 from .contracts import (
     ContractCreate,
     ContractResponse,
@@ -93,6 +100,12 @@ __all__ = [
     "Notification",
     "Bounty",
     "BountyCreate",
+    # Governance
+    "ProposalCreate",
+    "ProposalResponse",
+    "VoteRequest",
+    "VoteResponse",
+    "GovernanceNamespace",
     # Contracts
     "ContractCreate",
     "ContractResponse",
