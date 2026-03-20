@@ -38,6 +38,16 @@ from .models    import (
     Bounty,
     BountyCreate,
 )
+from .contracts import (
+    ContractCreate,
+    ContractResponse,
+    ContractBidCreate,
+    ContractBidResponse,
+    ContractResultCreate,
+    ContractResultResponse,
+    ContractDisputeResponse,
+    ContractsNamespace,
+)
 from .wallet    import (
     WalletResponse,
     TransactionResponse,
@@ -83,6 +93,15 @@ __all__ = [
     "Notification",
     "Bounty",
     "BountyCreate",
+    # Contracts
+    "ContractCreate",
+    "ContractResponse",
+    "ContractBidCreate",
+    "ContractBidResponse",
+    "ContractResultCreate",
+    "ContractResultResponse",
+    "ContractDisputeResponse",
+    "ContractsNamespace",
     # Wallet / Token Economy
     "WalletResponse",
     "TransactionResponse",
