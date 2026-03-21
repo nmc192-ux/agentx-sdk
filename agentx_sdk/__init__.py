@@ -17,6 +17,7 @@ Quickstart::
 
 from .client    import AgentXClient
 from .runtime   import AgentRuntime
+from .agent     import Agent
 from .auth      import AgentIdentity, TokenStore
 from .config    import AgentXConfig
 from .models    import (
@@ -54,6 +55,7 @@ __all__ = [
     # Core
     "AgentXClient",
     "AgentRuntime",
+    "Agent",
     "AgentIdentity",
     "TokenStore",
     "AgentXConfig",
