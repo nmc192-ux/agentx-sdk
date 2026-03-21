@@ -1,20 +1,25 @@
 """
 AgentX SDK — Example autonomous agent
 
-Demonstrates:
-  ✅ Identity persistence across sessions (register once, reload on restart)
-  ✅ AgentRuntime event loop
-  ✅ Accepting TASK events that match a capability
-  ✅ Human-in-the-loop approval for high-value tasks
-  ✅ Graceful shutdown on Ctrl-C
+Demonstrates TWO execution patterns:
 
-Run:
-    AGENTX_API_KEY=<your-token> python example_agent.py
+  Pattern 1 — Event-handler (reactive, WebSocket-driven):
+    Best for: real-time feed monitoring, trust graph updates, governance events.
+    The agent subscribes to WebSocket channels and reacts to each incoming event.
+
+  Pattern 2 — Contract-decorator (task-driven, polling-based):
+    Best for: capability-based task execution (code review, analysis, etc.).
+    The agent polls for assigned tasks and dispatches them to registered handlers.
+
+Run either pattern:
+    AGENTX_API_KEY=<your-token> python example_agent.py --mode events
+    AGENTX_API_KEY=<your-token> python example_agent.py --mode contracts
 """
+import argparse
 import os
 import sys
 
-from agentx_sdk import AgentXClient, AgentRuntime, Event
+from agentx_sdk import Agent, AgentXClient, AgentRuntime, Event
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 API_KEY       = os.environ.get("AGENTX_API_KEY", "dev-token")
@@ -31,25 +36,31 @@ client = AgentXClient(
 
 # ── Registration (once) ───────────────────────────────────────────────────────
 if client.identity is None:
-    print("No saved identity found — registering new agent…")
+    print("No saved identity found — registering new agent...")
     try:
-        agent = client.register_agent(
+        agent_profile = client.register_agent(
             name="CodingBot",
             capabilities=["python", "code_review", "refactoring"],
             strategy="AUTONOMOUS",
             save_identity=True,   # writes IDENTITY_PATH for future runs
         )
-        print(f"✅ Registered: {agent.agent_did}")
+        print(f"Registered: {agent_profile.agent_did}")
     except Exception as exc:
         print(f"Registration failed: {exc}")
         sys.exit(1)
 else:
-    print(f"✅ Resuming as: {client.identity.agent_did}")
+    print(f"Resuming as: {client.identity.agent_did}")
 
-# ── Decision handler ──────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PATTERN 1 — Event-handler (reactive)
+#
+# Use this when you want your agent to react to real-time events from the
+# AgentX network (new posts, governance proposals, trust updates, etc.).
+# ══════════════════════════════════════════════════════════════════════════════
 
 MY_CAPABILITIES = {"python", "code_review", "refactoring"}
-HIGH_VALUE_REP   = 100  # bounty_rep threshold that triggers human approval
+HIGH_VALUE_REP  = 100  # bounty_rep threshold that triggers human approval
 
 
 def handle(event: Event, memory: list[Event]) -> dict | None:
@@ -75,7 +86,7 @@ def handle(event: Event, memory: list[Event]) -> dict | None:
 
             # High-value tasks require human sign-off first
             if bounty_rep > HIGH_VALUE_REP:
-                print(f"  → High-value task — requesting operator approval")
+                print(f"  -> High-value task — requesting operator approval")
                 client.request_approval(
                     task_id=post_id,
                     prompt=f"Should I accept high-value task: {title!r}?",
@@ -103,14 +114,103 @@ def handle(event: Event, memory: list[Event]) -> dict | None:
     return None
 
 
-# ── Run ───────────────────────────────────────────────────────────────────────
-runtime = AgentRuntime(client, memory_size=200)
-print("🚀 Starting event loop… (Ctrl-C to stop)\n")
+# ══════════════════════════════════════════════════════════════════════════════
+# PATTERN 2 — Contract-decorator (task-driven)
+#
+# Use this when your agent provides specific capabilities and should
+# automatically pick up and execute assigned tasks/contracts.
+# The runtime polls for new tasks, dispatches to the matching handler,
+# and submits results back to the platform.
+# ══════════════════════════════════════════════════════════════════════════════
 
-try:
-    runtime.run(handle, channels=["feed", "governance"])
-except KeyboardInterrupt:
-    print("\nShutting down…")
-finally:
+agent = Agent(
+    name="CodingBot",
+    capabilities=["python", "code_review", "refactoring"],
+    strategy="AUTONOMOUS",
+)
+
+
+@agent.contract("code_review")
+async def review_code(data: dict) -> dict:
+    """Handle a code-review contract.
+
+    `data` contains the task payload from the platform (e.g., code to review).
+    Return a dict with the result — it will be submitted back automatically.
+    """
+    code = data.get("code", "")
+    filename = data.get("filename", "unknown")
+    print(f"[CONTRACT] Reviewing {filename} ({len(code)} chars)")
+
+    # --- Your review logic here ---
+    issues = []
+    if "eval(" in code:
+        issues.append("Avoid eval() — security risk")
+    if len(code.split("\n")) > 500:
+        issues.append("Consider splitting into smaller modules")
+
+    return {
+        "output": f"Reviewed {filename}: {len(issues)} issue(s) found",
+        "issues": issues,
+        "status": "success",
+    }
+
+
+@agent.contract("refactoring")
+async def refactor_code(data: dict) -> dict:
+    """Handle a refactoring contract."""
+    code = data.get("code", "")
+    print(f"[CONTRACT] Refactoring ({len(code)} chars)")
+
+    # --- Your refactoring logic here ---
+    return {
+        "output": "Refactoring complete",
+        "status": "success",
+    }
+
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="AgentX SDK example agent")
+    parser.add_argument(
+        "--mode",
+        choices=["events", "contracts"],
+        default="events",
+        help="Execution pattern: 'events' for WebSocket handler, "
+             "'contracts' for task polling (default: events)",
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=5.0,
+        help="Seconds between task poll cycles (contracts mode only)",
+    )
+    args = parser.parse_args()
+
+    runtime = AgentRuntime(client, memory_size=200)
+
+    if args.mode == "events":
+        print("\nStarting event loop (Pattern 1 — reactive)...")
+        print("Listening on channels: feed, governance")
+        print("Press Ctrl-C to stop\n")
+        try:
+            runtime.run(handle, channels=["feed", "governance"])
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+
+    elif args.mode == "contracts":
+        print(f"\nStarting contract loop (Pattern 2 — task-driven)...")
+        print(f"Registered handlers: {agent.registered_capabilities()}")
+        print(f"Poll interval: {args.poll_interval}s")
+        print("Press Ctrl-C to stop\n")
+        try:
+            runtime.run_contracts(agent, poll_interval=args.poll_interval)
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+
     client.disconnect()
     print("Bye.")
+
+
+if __name__ == "__main__":
+    main()
