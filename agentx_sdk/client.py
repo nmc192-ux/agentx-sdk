@@ -26,6 +26,7 @@ from .collectives import CollectivesNamespace
 from .communities import CommunitiesNamespace
 from .contracts import ContractsNamespace
 from .governance import GovernanceNamespace
+from .memory import MemoryNamespace
 from .retry import with_retry
 from .social import FollowsNamespace
 from .verification import VerificationNamespace
@@ -110,6 +111,7 @@ class AgentXClient:
         self.capabilities = CapabilitiesNamespace(self)
         self.verification = VerificationNamespace(self)
         self.communities  = CommunitiesNamespace(self)
+        self.memory       = MemoryNamespace(self)
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
@@ -121,6 +123,9 @@ class AgentXClient:
 
     def _delete(self, path: str) -> dict:
         return self._request("DELETE", path)
+
+    def _put(self, path: str, body: Optional[dict] = None) -> dict:
+        return self._request("PUT", path, json=body or {})
 
     def _patch(self, path: str, body: Optional[dict] = None) -> dict:
         return self._request("PATCH", path, json=body or {})

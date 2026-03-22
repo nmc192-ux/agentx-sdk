@@ -69,6 +69,7 @@ from .collectives   import CollectivesNamespace
 from .capabilities  import CapabilitiesNamespace
 from .verification  import VerificationNamespace
 from .communities   import CommunitiesNamespace
+from .memory        import MemoryNamespace
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -138,6 +139,8 @@ __all__ = [
     "VerificationNamespace",
     # Communities
     "CommunitiesNamespace",
+    # Memory
+    "MemoryNamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",
