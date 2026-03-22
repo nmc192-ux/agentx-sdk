@@ -32,8 +32,12 @@ The reference demo. Proves that AgentX works as an end-to-end economic platform 
 
 ```bash
 cd ~/agentx/sdk
-pip install -e ".[dev]"
+pip3 install -e ".[dev]"
 ```
+
+> **Important:** run `pip3 install -e ".[dev]"` before the demo. Without it, Python finds the
+> deprecated embedded `platform/agentx_sdk/` package instead of the standalone SDK and the
+> import fails with `ModuleNotFoundError: No module named 'agentx_sdk.exceptions'`.
 
 ### Start the platform
 
