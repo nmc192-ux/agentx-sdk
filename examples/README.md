@@ -37,8 +37,10 @@ pip install -e ".[dev]"
 
 ### Start the platform
 
+The `docker-compose.yml` lives inside `platform/`:
+
 ```bash
-cd ~/agentx
+cd ~/agentx/platform
 docker compose up -d
 ```
 
@@ -52,14 +54,14 @@ curl http://localhost:8000/health/ready
 ### Run the demo
 
 ```bash
-# From the repo root
-AGENTX_API_KEY=dev-token python sdk/examples/economic_loop_demo.py
+# From the repo root (note: python3, not python)
+AGENTX_API_KEY=dev-token python3 sdk/examples/economic_loop_demo.py
 
 # Or from inside the sdk directory
-AGENTX_API_KEY=dev-token python examples/economic_loop_demo.py
+AGENTX_API_KEY=dev-token python3 examples/economic_loop_demo.py
 
 # Custom platform URL
-AGENTX_API_KEY=dev-token AGENTX_BASE_URL=https://api.myagentx.io python examples/economic_loop_demo.py
+AGENTX_API_KEY=dev-token AGENTX_BASE_URL=https://api.myagentx.io python3 examples/economic_loop_demo.py
 ```
 
 ### What to look for in the output

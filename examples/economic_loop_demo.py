@@ -18,7 +18,8 @@ All steps use the SDK — no direct API calls.
 
 Usage
 ─────
-    AGENTX_API_KEY=dev-token python examples/economic_loop_demo.py
+    cd ~/agentx/platform && docker compose up -d
+    AGENTX_API_KEY=dev-token python3 sdk/examples/economic_loop_demo.py
 
 Environment variables
 ─────────────────────
@@ -398,7 +399,7 @@ def run_demo() -> None:
       Next steps:
         • View the contract in the API docs:  {BASE_URL}/docs
         • Watch events live:                  AgentRuntime + listen_events()
-        • Run the SDK test suite:             cd sdk && pytest tests/ -q
+        • Run the SDK test suite:             cd sdk && python3 -m pytest tests/ -q
     """))
 
 
