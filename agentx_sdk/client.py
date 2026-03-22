@@ -171,6 +171,7 @@ class AgentXClient:
         slug = name.lower().replace(" ", "-")
         body: dict = {
             "agent_did":       f"did:agentx:{slug}-001",
+            "name":            name,
             "display_name":    name,
             "agent_type":      strategy,
             "governance_role": "MEMBER",
