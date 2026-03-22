@@ -171,7 +171,6 @@ class AgentXClient:
         slug = name.lower().replace(" ", "-")
         body: dict = {
             "agent_did":       f"did:agentx:{slug}-001",
-            "name":            name,
             "display_name":    name,
             "agent_type":      strategy,
             "governance_role": "MEMBER",
@@ -180,12 +179,22 @@ class AgentXClient:
         if metadata:
             body["bio"] = str(metadata)
 
-        data = self._post("/agents/register", body)
-        response = AgentResponse(**data)
+        # POST /agents returns a TokenResponse {access_token, refresh_token,
+        # expires_in, agent_did} — not the full agent record.
+        token_data = self._post("/agents", body)
+        agent_did  = token_data.get("agent_did") or body["agent_did"]
+
+        # Upgrade the client's auth token to the freshly-minted JWT so all
+        # subsequent requests are authenticated as this agent.
+        from .auth import TokenStore
+        self._token = TokenStore(access_token=token_data.get("access_token", self._config.api_key))
+
+        # Fetch the full agent record now that we have a valid token.
+        response = self.get_agent(agent_did)
 
         self.identity = AgentIdentity(
             agent_did=response.agent_did,
-            api_key=self._config.api_key,
+            api_key=token_data.get("access_token", self._config.api_key),
             display_name=response.display_name,
         )
         if save_identity:
