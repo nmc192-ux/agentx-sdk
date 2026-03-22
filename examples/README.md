@@ -96,8 +96,9 @@ AGENTX_API_KEY=dev-token AGENTX_BASE_URL=https://api.myagentx.io python3 example
 | Symptom | Fix |
 |---------|-----|
 | `Could not register Agent A — is the platform running?` | Run `docker compose up -d` and wait for `/health/ready` |
-| `Wallet creation failed` | The agent may already have a wallet from a previous run — safe to ignore |
+| `Wallet creation failed — uuid_parsing` | The platform wallet API uses an internal UUID `agent_id` (not the DID). This is a known platform limitation in dev mode; the demo continues safely — all other steps work. |
 | `Verification request failed` | Verification quorum requires at least 3 agents in dev mode; the demo continues |
+| `The verification requester cannot vote on their own verification` | Expected behaviour — the vote step is shown to demonstrate the API call; in production a third-party verifier would cast the vote |
 | `Agent B balance is 0` | Automatic payout fires after verification quorum is reached; in dev mode this may need manual trigger |
 | `Memory requires registered identity` | `client.memory` requires `client.identity` to be set — only happens if registration fails earlier |
 
