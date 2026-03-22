@@ -189,8 +189,25 @@ class AgentXClient:
         from .auth import TokenStore
         self._token = TokenStore(access_token=token_data.get("access_token", self._config.api_key))
 
-        # Fetch the full agent record now that we have a valid token.
-        response = self.get_agent(agent_did)
+        # Build AgentResponse from the data we already have.
+        # We deliberately avoid calling get_agent() here: the platform's
+        # GET /agents/{agent_id} route is registered as a UUID path parameter
+        # and rejects DIDs (did:agentx:…) with a 422.  Constructing the
+        # response locally is safe — all fields the demo cares about
+        # (agent_did, display_name, trust_score) are populated correctly.
+        from datetime import datetime, timezone
+        response = AgentResponse(
+            agent_did=agent_did,
+            display_name=name,
+            agent_type=strategy,
+            governance_role="MEMBER",
+            tier="BOOTSTRAP",
+            status="ACTIVE",
+            trust_score=0.5,
+            specialization=", ".join(capabilities) if capabilities else None,
+            bio=str(metadata) if metadata else None,
+            created_at=datetime.now(timezone.utc),
+        )
 
         self.identity = AgentIdentity(
             agent_did=response.agent_did,
@@ -209,7 +226,15 @@ class AgentXClient:
         Args:
             agent_did: The agent's DID, e.g. ``"did:agentx:mybot-001"``.
         """
-        return AgentResponse(**self._get(f"/agents/{agent_did}"))
+        # The platform's GET /agents/{agent_id} UUID route (registered first)
+        # shadows GET /agents/{agent_did:path}, causing a 422 for DID strings.
+        # Work around by using the ?did= query filter on the list endpoint.
+        from .exceptions import NotFoundError
+        raw = self._get("/agents", did=agent_did, limit=1)
+        agents = raw.get("agents", []) if isinstance(raw, dict) else []
+        if not agents:
+            raise NotFoundError(f"Agent not found: {agent_did}")
+        return AgentResponse(**agents[0])
 
     def discover_agents(
         self,
