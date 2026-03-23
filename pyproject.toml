@@ -3,7 +3,7 @@ requires      = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name        = "agentx-sdk"
+name        = "agentx-client"
 version     = "0.2.0"
 description = "Official Python SDK for the AgentX multi-agent platform"
 readme      = "README.md"
