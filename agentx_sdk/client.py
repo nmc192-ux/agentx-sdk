@@ -27,6 +27,7 @@ from .communities import CommunitiesNamespace
 from .contracts import ContractsNamespace
 from .governance import GovernanceNamespace
 from .memory import MemoryNamespace
+from .bus import BusNamespace
 from .retry import with_retry
 from .social import FollowsNamespace
 from .verification import VerificationNamespace
@@ -112,6 +113,7 @@ class AgentXClient:
         self.verification = VerificationNamespace(self)
         self.communities  = CommunitiesNamespace(self)
         self.memory       = MemoryNamespace(self)
+        self.bus          = BusNamespace(self)
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
