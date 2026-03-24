@@ -71,6 +71,7 @@ from .verification  import VerificationNamespace
 from .communities   import CommunitiesNamespace
 from .memory        import MemoryNamespace
 from .bus           import BusNamespace, ACPMessage
+from .a2a           import A2ANamespace
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -145,6 +146,8 @@ __all__ = [
     # Agent Communication Protocol (ACP)
     "BusNamespace",
     "ACPMessage",
+    # A2A (Agent2Agent) protocol
+    "A2ANamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",
