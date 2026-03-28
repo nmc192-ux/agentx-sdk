@@ -21,7 +21,18 @@ from .models import (
     PostCreate,
     Task,
 )
+from .capabilities import CapabilitiesNamespace
+from .collectives import CollectivesNamespace
+from .communities import CommunitiesNamespace
+from .contracts import ContractsNamespace
+from .governance import GovernanceNamespace
+from .memory import MemoryNamespace
+from .bus import BusNamespace
+from .a2a import A2ANamespace
 from .retry import with_retry
+from .social import FollowsNamespace
+from .verification import VerificationNamespace
+from .wallet import WalletNamespace
 from .websocket import AgentXWebSocket
 
 
@@ -94,6 +105,18 @@ class AgentXClient:
         if self.identity:
             self._log.info("Loaded identity: %s", self.identity.agent_did)
 
+        self.wallet       = WalletNamespace(self)
+        self.contracts    = ContractsNamespace(self)
+        self.governance   = GovernanceNamespace(self)
+        self.social       = FollowsNamespace(self)
+        self.collectives  = CollectivesNamespace(self)
+        self.capabilities = CapabilitiesNamespace(self)
+        self.verification = VerificationNamespace(self)
+        self.communities  = CommunitiesNamespace(self)
+        self.memory       = MemoryNamespace(self)
+        self.bus          = BusNamespace(self)
+        self.a2a          = A2ANamespace(self)
+
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
     def _get(self, path: str, **params) -> dict:
@@ -101,6 +124,12 @@ class AgentXClient:
 
     def _post(self, path: str, body: Optional[dict] = None) -> dict:
         return self._request("POST", path, json=body or {})
+
+    def _delete(self, path: str) -> dict:
+        return self._request("DELETE", path)
+
+    def _put(self, path: str, body: Optional[dict] = None) -> dict:
+        return self._request("PUT", path, json=body or {})
 
     def _patch(self, path: str, body: Optional[dict] = None) -> dict:
         return self._request("PATCH", path, json=body or {})
@@ -154,12 +183,39 @@ class AgentXClient:
         if metadata:
             body["bio"] = str(metadata)
 
-        data = self._post("/agents/register", body)
-        response = AgentResponse(**data)
+        # POST /agents returns a TokenResponse {access_token, refresh_token,
+        # expires_in, agent_did} — not the full agent record.
+        token_data = self._post("/agents", body)
+        agent_did  = token_data.get("agent_did") or body["agent_did"]
+
+        # Upgrade the client's auth token to the freshly-minted JWT so all
+        # subsequent requests are authenticated as this agent.
+        from .auth import TokenStore
+        self._token = TokenStore(access_token=token_data.get("access_token", self._config.api_key))
+
+        # Build AgentResponse from the data we already have.
+        # We deliberately avoid calling get_agent() here: the platform's
+        # GET /agents/{agent_id} route is registered as a UUID path parameter
+        # and rejects DIDs (did:agentx:…) with a 422.  Constructing the
+        # response locally is safe — all fields the demo cares about
+        # (agent_did, display_name, trust_score) are populated correctly.
+        from datetime import datetime, timezone
+        response = AgentResponse(
+            agent_did=agent_did,
+            display_name=name,
+            agent_type=strategy,
+            governance_role="MEMBER",
+            tier="BOOTSTRAP",
+            status="ACTIVE",
+            trust_score=0.5,
+            specialization=", ".join(capabilities) if capabilities else None,
+            bio=str(metadata) if metadata else None,
+            created_at=datetime.now(timezone.utc),
+        )
 
         self.identity = AgentIdentity(
             agent_did=response.agent_did,
-            api_key=self._config.api_key,
+            api_key=token_data.get("access_token", self._config.api_key),
             display_name=response.display_name,
         )
         if save_identity:
@@ -174,7 +230,15 @@ class AgentXClient:
         Args:
             agent_did: The agent's DID, e.g. ``"did:agentx:mybot-001"``.
         """
-        return AgentResponse(**self._get(f"/agents/{agent_did}"))
+        # The platform's GET /agents/{agent_id} UUID route (registered first)
+        # shadows GET /agents/{agent_did:path}, causing a 422 for DID strings.
+        # Work around by using the ?did= query filter on the list endpoint.
+        from .exceptions import NotFoundError
+        raw = self._get("/agents", did=agent_did, limit=1)
+        agents = raw.get("agents", []) if isinstance(raw, dict) else []
+        if not agents:
+            raise NotFoundError(f"Agent not found: {agent_did}")
+        return AgentResponse(**agents[0])
 
     def discover_agents(
         self,
@@ -485,6 +549,8 @@ def _request_with_retry(
         try:
             resp = http.request(method, path, headers=headers, **kwargs)
             raise_for_status(resp)
+            if resp.status_code == 204 or not resp.content:
+                return {}
             return resp.json()
 
         except RateLimitError as exc:

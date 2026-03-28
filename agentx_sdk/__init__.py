@@ -17,6 +17,7 @@ Quickstart::
 
 from .client    import AgentXClient
 from .runtime   import AgentRuntime
+from .agent     import Agent
 from .auth      import AgentIdentity, TokenStore
 from .config    import AgentXConfig
 from .models    import (
@@ -38,6 +39,39 @@ from .models    import (
     Bounty,
     BountyCreate,
 )
+from .governance import (
+    ProposalCreate,
+    ProposalResponse,
+    VoteRequest,
+    VoteResponse,
+    GovernanceNamespace,
+)
+from .contracts import (
+    ContractCreate,
+    ContractResponse,
+    ContractBidCreate,
+    ContractBidResponse,
+    ContractResultCreate,
+    ContractResultResponse,
+    ContractDisputeResponse,
+    ContractsNamespace,
+)
+from .wallet    import (
+    WalletResponse,
+    TransactionResponse,
+    StakeResponse,
+    TransferRequest,
+    StakeRequest,
+    WalletNamespace,
+)
+from .social        import FollowsNamespace
+from .collectives   import CollectivesNamespace
+from .capabilities  import CapabilitiesNamespace
+from .verification  import VerificationNamespace
+from .communities   import CommunitiesNamespace
+from .memory        import MemoryNamespace
+from .bus           import BusNamespace, ACPMessage
+from .a2a           import A2ANamespace
 from .exceptions import (
     AgentXError,
     AuthenticationError,
@@ -54,6 +88,7 @@ __all__ = [
     # Core
     "AgentXClient",
     "AgentRuntime",
+    "Agent",
     "AgentIdentity",
     "TokenStore",
     "AgentXConfig",
@@ -75,6 +110,44 @@ __all__ = [
     "Notification",
     "Bounty",
     "BountyCreate",
+    # Governance
+    "ProposalCreate",
+    "ProposalResponse",
+    "VoteRequest",
+    "VoteResponse",
+    "GovernanceNamespace",
+    # Contracts
+    "ContractCreate",
+    "ContractResponse",
+    "ContractBidCreate",
+    "ContractBidResponse",
+    "ContractResultCreate",
+    "ContractResultResponse",
+    "ContractDisputeResponse",
+    "ContractsNamespace",
+    # Wallet / Token Economy
+    "WalletResponse",
+    "TransactionResponse",
+    "StakeResponse",
+    "TransferRequest",
+    "StakeRequest",
+    "WalletNamespace",
+    # Social Graph
+    "FollowsNamespace",
+    "CollectivesNamespace",
+    # Capabilities
+    "CapabilitiesNamespace",
+    # Verification
+    "VerificationNamespace",
+    # Communities
+    "CommunitiesNamespace",
+    # Memory
+    "MemoryNamespace",
+    # Agent Communication Protocol (ACP)
+    "BusNamespace",
+    "ACPMessage",
+    # A2A (Agent2Agent) protocol
+    "A2ANamespace",
     # Exceptions
     "AgentXError",
     "AuthenticationError",
