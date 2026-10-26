@@ -1,0 +1,687 @@
+"""
+agentx_sdk — unit tests (no live server required).
+
+Uses respx to mock httpx requests.
+"""
+import json
+import pathlib
+import tempfile
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+import pytest
+import respx
+import httpx
+
+from agentx_sdk import (
+    AgentXClient,
+    AgentRuntime,
+    AgentIdentity,
+    Event,
+    AgentXError,
+    AuthenticationError,
+    NotFoundError,
+    RateLimitError,
+    ServerError,
+    ValidationError,
+)
+from agentx_sdk.exceptions import raise_for_status
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+BASE = "http://testserver"
+
+def make_client(**kwargs) -> AgentXClient:
+    return AgentXClient(api_key="test-key", base_url=BASE, max_retries=0, **kwargs)
+
+
+def agent_payload(**overrides) -> dict:
+    return {
+        "agent_did":            "did:agentx:mybot-001",
+        "display_name":         "MyBot",
+        "agent_type":           "AUTONOMOUS",
+        "governance_role":      "MEMBER",
+        "tier":                 "BOOTSTRAP",
+        "status":               "ACTIVE",
+        "trust_score":          0.5,
+        "created_at":           "2024-01-01T00:00:00",
+        "verifications_passed": 0,
+        "eco_influence_score":  0.0,
+        **overrides,
+    }
+
+
+def task_payload(**overrides) -> dict:
+    return {
+        "task_id":             str(uuid4()),
+        "requester_agent_did": "did:agentx:mybot-001",
+        "executor_agent_did":  "did:agentx:other-001",
+        "task_type":           "ACCEPT_TASK",
+        "payload":             {},
+        "status":              "PENDING",
+        "result":              None,
+        "created_at":          "2024-01-01T00:00:00",
+        "updated_at":          "2024-01-01T00:00:00",
+        **overrides,
+    }
+
+
+# ── Exceptions ────────────────────────────────────────────────────────────────
+
+class TestRaiseForStatus:
+    def _resp(self, status: int, body: dict | None = None, headers: dict | None = None):
+        return httpx.Response(
+            status_code=status,
+            json=body or {"detail": "err"},
+            headers=headers or {},
+        )
+
+    def test_200_no_raise(self):
+        raise_for_status(self._resp(200))   # should not raise
+
+    def test_401(self):
+        with pytest.raises(AuthenticationError):
+            raise_for_status(self._resp(401))
+
+    def test_404(self):
+        with pytest.raises(NotFoundError):
+            raise_for_status(self._resp(404))
+
+    def test_422(self):
+        with pytest.raises(ValidationError):
+            raise_for_status(self._resp(422))
+
+    def test_429_with_retry_after(self):
+        with pytest.raises(RateLimitError) as exc_info:
+            raise_for_status(self._resp(429, headers={"Retry-After": "5"}))
+        assert exc_info.value.retry_after == 5
+
+    def test_429_default_retry_after(self):
+        with pytest.raises(RateLimitError) as exc_info:
+            raise_for_status(self._resp(429))
+        assert exc_info.value.retry_after == 1
+
+    def test_500(self):
+        with pytest.raises(ServerError):
+            raise_for_status(self._resp(500))
+
+    def test_generic_4xx(self):
+        with pytest.raises(AgentXError):
+            raise_for_status(self._resp(403))
+
+
+# ── AgentIdentity ─────────────────────────────────────────────────────────────
+
+class TestAgentIdentity:
+    def test_save_and_load(self, tmp_path):
+        p = str(tmp_path / "identity.json")
+        identity = AgentIdentity(agent_did="did:agentx:bot-001", api_key="key")
+        identity.save(p)
+
+        loaded = AgentIdentity.load(p)
+        assert loaded.agent_did == "did:agentx:bot-001"
+        assert loaded.api_key   == "key"
+
+    def test_load_or_none_missing(self, tmp_path):
+        result = AgentIdentity.load_or_none(str(tmp_path / "nonexistent.json"))
+        assert result is None
+
+    def test_load_or_none_present(self, tmp_path):
+        p = str(tmp_path / "identity.json")
+        AgentIdentity(agent_did="did:agentx:x", api_key="k").save(p)
+        result = AgentIdentity.load_or_none(p)
+        assert result is not None
+        assert result.agent_did == "did:agentx:x"
+
+    def test_identity_path_constructor(self, tmp_path):
+        p = str(tmp_path / "identity.json")
+        AgentIdentity(agent_did="did:agentx:loaded", api_key="k").save(p)
+        client = make_client(identity_path=p)
+        assert client.identity is not None
+        assert client.identity.agent_did == "did:agentx:loaded"
+
+
+# ── AgentXClient HTTP methods ─────────────────────────────────────────────────
+
+class TestRegisterAgent:
+    @respx.mock
+    def test_register_saves_identity(self, tmp_path):
+        payload = agent_payload()
+        respx.post(f"{BASE}/agents/register").mock(return_value=httpx.Response(200, json=payload))
+
+        client = make_client()
+        agent  = client.register_agent("MyBot", capabilities=["python"], save_identity=False)
+
+        assert agent.agent_did   == "did:agentx:mybot-001"
+        assert agent.trust_score == 0.5
+        assert client.identity is not None
+
+    @respx.mock
+    def test_register_writes_file(self, tmp_path):
+        payload = agent_payload()
+        respx.post(f"{BASE}/agents/register").mock(return_value=httpx.Response(200, json=payload))
+
+        id_path = str(tmp_path / "id.json")
+        client  = AgentXClient(api_key="k", base_url=BASE, max_retries=0)
+        client.register_agent("MyBot", capabilities=[], save_identity=True)
+
+        # AgentIdentity.save() path is default ".agentx_identity.json"
+        # — we only verify identity is set on the client
+        assert client.identity.agent_did == "did:agentx:mybot-001"
+
+
+class TestGetAgent:
+    @respx.mock
+    def test_success(self):
+        payload = agent_payload()
+        respx.get(f"{BASE}/agents/did:agentx:mybot-001").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        client = make_client()
+        agent  = client.get_agent("did:agentx:mybot-001")
+        assert agent.display_name == "MyBot"
+
+    @respx.mock
+    def test_not_found(self):
+        respx.get(f"{BASE}/agents/missing").mock(
+            return_value=httpx.Response(404, json={"detail": "not found"})
+        )
+        with pytest.raises(NotFoundError):
+            make_client().get_agent("missing")
+
+
+class TestAct:
+    @respx.mock
+    def test_act_auto_route(self):
+        t = task_payload()
+        route = respx.post(f"{BASE}/tasks/route").mock(return_value=httpx.Response(200, json=t))
+        task = make_client().act("ACCEPT_TASK", data={"post_id": "abc"})
+        assert task.task_type == "ACCEPT_TASK"
+        # The API's field names, and no requester: it comes from the token.
+        assert json.loads(route.calls.last.request.content) == {
+            "task_type": "ACCEPT_TASK", "payload": {"post_id": "abc"},
+        }
+
+    @respx.mock
+    def test_act_direct(self):
+        t = task_payload()
+        route = respx.post(f"{BASE}/tasks/create").mock(return_value=httpx.Response(200, json=t))
+        task = make_client().act("DO_WORK", data={}, executor_did="did:agentx:other-001")
+        assert task.status == "PENDING"
+        assert json.loads(route.calls.last.request.content) == {
+            "task_type": "DO_WORK", "payload": {},
+            "executor_agent_did": "did:agentx:other-001",
+        }
+
+    @respx.mock
+    def test_task_without_executor_parses(self):
+        t = task_payload()
+        t["executor_agent_did"] = None
+        respx.post(f"{BASE}/tasks/route").mock(return_value=httpx.Response(200, json=t))
+        assert make_client().act("DO", data={}).executor_agent_did is None
+
+    @respx.mock
+    def test_accept_task(self):
+        t = task_payload(status="IN_PROGRESS")
+        tid = t["task_id"]
+        route = respx.post(f"{BASE}/tasks/{tid}/update").mock(
+            return_value=httpx.Response(200, json=t)
+        )
+        task = make_client().accept_task(tid)
+        assert task.status == "IN_PROGRESS"
+        assert json.loads(route.calls.last.request.content) == {"status": "IN_PROGRESS"}
+
+    @respx.mock
+    def test_submit_result_completes_direct_task(self):
+        t = task_payload(status="COMPLETED")
+        tid = t["task_id"]
+        route = respx.post(f"{BASE}/tasks/{tid}/update").mock(
+            return_value=httpx.Response(200, json=t)
+        )
+        task = make_client().submit_result(tid, {"output": "done"})
+        assert task.status == "COMPLETED"
+        assert json.loads(route.calls.last.request.content) == {
+            "status": "COMPLETED", "result": {"output": "done"},
+        }
+
+    @respx.mock
+    def test_submit_marketplace_result(self):
+        route = respx.post(f"{BASE}/tasks/abc/result").mock(
+            return_value=httpx.Response(201, json={"result_id": "r1"})
+        )
+        result = make_client().submit_marketplace_result("abc", {"output": "done"})
+        assert result["result_id"] == "r1"
+        assert json.loads(route.calls.last.request.content) == {
+            "result_payload": {"output": "done"},
+        }
+
+    @respx.mock
+    def test_cancel_task(self):
+        route = respx.post(f"{BASE}/tasks/abc/cancel").mock(
+            return_value=httpx.Response(200, json={"status": "cancelled"})
+        )
+        assert make_client().cancel_task("abc")["status"] == "cancelled"
+        assert route.called
+
+    @respx.mock
+    def test_cancel_taken_task_raises(self):
+        respx.post(f"{BASE}/tasks/abc/cancel").mock(
+            return_value=httpx.Response(409, json={"detail": "Task is not open"})
+        )
+        with pytest.raises(AgentXError, match="409"):
+            make_client().cancel_task("abc")
+
+    @respx.mock
+    def test_reclaim_task(self):
+        route = respx.post(f"{BASE}/tasks/abc/reclaim").mock(
+            return_value=httpx.Response(200, json={"status": "cancelled"})
+        )
+        assert make_client().reclaim_task("abc")["status"] == "cancelled"
+        assert json.loads(route.calls.last.request.content) == {}
+
+    @respx.mock
+    @pytest.mark.parametrize("code", [403, 409])
+    def test_reclaim_task_refused_raises(self, code):
+        respx.post(f"{BASE}/tasks/abc/reclaim").mock(
+            return_value=httpx.Response(code, json={"detail": "not yet"})
+        )
+        with pytest.raises(AgentXError, match=str(code)):
+            make_client().reclaim_task("abc")
+
+    @respx.mock
+    def test_reclaim_task_id_cannot_pick_the_route(self):
+        catch_all = respx.route()
+        with pytest.raises(ValueError):
+            make_client().reclaim_task("../wallets/faucet")
+        assert not catch_all.called
+
+    @respx.mock
+    def test_list_tasks_sends_status(self):
+        route = respx.get(f"{BASE}/tasks").mock(
+            return_value=httpx.Response(200, json=[{"task_id": "t1", "status": "assigned"}])
+        )
+        assert make_client().list_tasks("assigned", limit=5)[0]["task_id"] == "t1"
+        assert route.calls.last.request.url.params["status"] == "assigned"
+        assert route.calls.last.request.url.params["limit"] == "5"
+
+    @respx.mock
+    def test_create_task(self):
+        route = respx.post(f"{BASE}/tasks").mock(
+            return_value=httpx.Response(201, json={"task_id": "t1", "status": "open"})
+        )
+        assert make_client().create_task("text.summarize", {"text": "x"}, 20)["task_id"] == "t1"
+        assert json.loads(route.calls.last.request.content) == {
+            "task_type": "text.summarize", "payload": {"text": "x"}, "reward": 20,
+        }
+
+    @respx.mock
+    def test_bid_on_task(self):
+        route = respx.post(f"{BASE}/tasks/abc/bid").mock(
+            return_value=httpx.Response(201, json={"bid_id": "b1"})
+        )
+        assert make_client().bid_on_task("abc", confidence=0.9)["bid_id"] == "b1"
+        assert json.loads(route.calls.last.request.content) == {
+            "confidence": 0.9, "bid_price": 0,
+        }
+
+    @respx.mock
+    def test_task_results_approve_and_reject(self):
+        respx.get(f"{BASE}/tasks/abc/results").mock(
+            return_value=httpx.Response(200, json=[{"verification_status": "pending"}])
+        )
+        approve = respx.post(f"{BASE}/tasks/abc/approve").mock(
+            return_value=httpx.Response(200, json={"reward_released": 20})
+        )
+        reject = respx.post(f"{BASE}/tasks/abc/reject").mock(
+            return_value=httpx.Response(200, json={"verification_status": "rejected"})
+        )
+        client = make_client()
+        assert client.task_results("abc")[0]["verification_status"] == "pending"
+        assert client.approve_task_result("abc")["reward_released"] == 20
+        assert approve.called
+        client.reject_task_result("abc", "too short")
+        assert json.loads(reject.calls.last.request.content) == {"reason": "too short"}
+
+    @respx.mock
+    def test_approve_without_result_raises(self):
+        respx.post(f"{BASE}/tasks/abc/approve").mock(
+            return_value=httpx.Response(409, json={"detail": "No result under review"})
+        )
+        with pytest.raises(AgentXError, match="409"):
+            make_client().approve_task_result("abc")
+
+
+class TestNotifications:
+    @respx.mock
+    def test_unwraps_envelope(self):
+        payload = {
+            "notifications": [
+                {
+                    "notif_id":   "n1",
+                    "from_did":   "did:agentx:other",
+                    "notif_type": "MENTION",
+                    "is_read":    False,
+                    "created_at": "2024-01-01T00:00:00",
+                }
+            ],
+            "unread_count": 1,
+            "total": 1,
+        }
+        respx.get(f"{BASE}/notifications").mock(return_value=httpx.Response(200, json=payload))
+        notifs = make_client().get_notifications()
+        assert len(notifs) == 1
+        assert notifs[0].notif_id == "n1"
+
+    @respx.mock
+    def test_empty_envelope(self):
+        respx.get(f"{BASE}/notifications").mock(
+            return_value=httpx.Response(200, json={"notifications": [], "total": 0})
+        )
+        notifs = make_client().get_notifications()
+        assert notifs == []
+
+
+class TestMessages:
+    @respx.mock
+    def test_send_message(self):
+        payload = {
+            "message_id":         str(uuid4()),
+            "sender_agent_did":   "did:agentx:me",
+            "receiver_agent_did": "did:agentx:you",
+            "message":            "Hello",
+            "created_at":         "2024-01-01T00:00:00",
+        }
+        route = respx.post(f"{BASE}/messages/send").mock(
+            return_value=httpx.Response(201, json=payload)
+        )
+        client = make_client()
+        client.identity = AgentIdentity(agent_did="did:agentx:me", api_key="test-key")
+        msg = client.send_message("did:agentx:you", "Hello")
+        assert msg.message == "Hello"
+        # The server refuses a send whose sender_agent_did is not the caller.
+        sent = json.loads(route.calls.last.request.content)
+        assert sent == {
+            "sender_agent_did": "did:agentx:me",
+            "receiver_agent_did": "did:agentx:you",
+            "message": "Hello",
+        }
+
+    @respx.mock
+    def test_send_message_without_did_raises_before_sending(self):
+        route = respx.post(f"{BASE}/messages/send")
+        with pytest.raises(AgentXError, match="send_message"):
+            make_client().send_message("did:agentx:you", "Hello")
+        assert not route.called
+
+    @respx.mock
+    def test_messages_reads_own_inbox(self):
+        row = {
+            "message_id":         str(uuid4()),
+            "sender_agent_did":   "did:agentx:you",
+            "receiver_agent_did": "did:agentx:me",
+            "message":            "Welcome!",
+            "created_at":         "2024-01-01T00:00:00",
+        }
+        route = respx.get(f"{BASE}/messages/did:agentx:me").mock(
+            return_value=httpx.Response(200, json=[row])
+        )
+        client = make_client()
+        client.identity = AgentIdentity(agent_did="did:agentx:me", api_key="test-key")
+        msgs = client.messages()
+        assert route.called
+        assert [m.message for m in msgs] == ["Welcome!"]
+        assert msgs[0].receiver_agent_did == client.agent_did
+
+    @respx.mock
+    def test_get_trust_reads_composite_for_self(self):
+        respx.get(f"{BASE}/agents/did:agentx:me/trust").mock(
+            return_value=httpx.Response(200, json={
+                "agent_did": "did:agentx:me", "trust_score": 0.44,
+                "trust_breakdown": {"composite": 0.45},
+            })
+        )
+        client = make_client()
+        client.identity = AgentIdentity(agent_did="did:agentx:me", api_key="test-key")
+        assert client.get_trust() == 0.45
+
+    @respx.mock
+    def test_messages_without_did_raises_before_sending(self):
+        route = respx.get(url__regex=rf"{BASE}/messages/.*")
+        with pytest.raises(AgentXError, match="messages"):
+            make_client().messages()
+        assert not route.called
+
+
+class TestBounties:
+    @respx.mock
+    def test_create_bounty(self):
+        payload = {
+            "bounty_id":            str(uuid4()),
+            "creator_did":          "did:agentx:me",
+            "title":                "Fix bug",
+            "description":          "...",
+            "capability_required":  "python",
+            "reward_pool":          100,
+            "status":               "open",
+            "created_at":           "2024-01-01T00:00:00",
+        }
+        respx.post(f"{BASE}/markets/bounties").mock(return_value=httpx.Response(200, json=payload))
+        from agentx_sdk import BountyCreate
+        b = make_client().create_bounty(BountyCreate(
+            title="Fix bug", description="...", capability_required="python", reward_pool=100
+        ))
+        assert b.title == "Fix bug"
+
+    @respx.mock
+    def test_create_bounty_with_deadline_serialises(self):
+        # A datetime deadline used to break the JSON body.
+        route = respx.post(f"{BASE}/markets/bounties").mock(
+            return_value=httpx.Response(201, json=bounty_payload())
+        )
+        from agentx_sdk import BountyCreate
+        make_client().create_bounty(BountyCreate(
+            title="Fix bug", description="...", capability_required="python",
+            reward_pool=100, deadline=datetime(2026, 12, 1, 12, 0),
+        ))
+        body = json.loads(route.calls[0].request.content)
+        assert body["deadline"].startswith("2026-12-01T12:00")
+
+    @respx.mock
+    def test_list_bounties_pages(self):
+        route = respx.get(f"{BASE}/markets/bounties").mock(
+            return_value=httpx.Response(200, json=[bounty_payload()])
+        )
+        out = make_client().list_bounties(status="open", limit=10, offset=5)
+        assert out[0].title == "Fix bug"
+        params = route.calls[0].request.url.params
+        assert params["status"] == "open"
+        assert params["limit"] == "10"
+        assert params["offset"] == "5"
+        assert "capability" not in params
+
+    @respx.mock
+    def test_get_bounty(self):
+        respx.get(f"{BASE}/markets/bounties/{BOUNTY_ID}").mock(
+            return_value=httpx.Response(200, json=bounty_payload())
+        )
+        assert str(make_client().get_bounty(BOUNTY_ID).bounty_id) == BOUNTY_ID
+
+    @respx.mock
+    def test_submit_solution_body(self):
+        route = respx.post(f"{BASE}/markets/bounties/{BOUNTY_ID}/submit").mock(
+            return_value=httpx.Response(201, json={"submission_id": str(uuid4())})
+        )
+        make_client().submit_bounty_solution(BOUNTY_ID, {"patch": "x"}, summary="fix")
+        body = json.loads(route.calls[0].request.content)
+        assert body == {"solution_data": {"patch": "x"}, "summary": "fix"}
+
+    @respx.mock
+    def test_list_submissions(self):
+        respx.get(f"{BASE}/markets/bounties/{BOUNTY_ID}/submissions").mock(
+            return_value=httpx.Response(200, json=[{"submission_id": "s1"}])
+        )
+        assert make_client().list_bounty_submissions(BOUNTY_ID) == [{"submission_id": "s1"}]
+
+    @respx.mock
+    def test_evaluate_body(self):
+        route = respx.post(
+            f"{BASE}/markets/bounties/{BOUNTY_ID}/submissions/s1/evaluate"
+        ).mock(return_value=httpx.Response(200, json={"score": 0.8}))
+        make_client().evaluate_bounty_submission(BOUNTY_ID, "s1", 0.8)
+        assert json.loads(route.calls[0].request.content) == {"score": 0.8}
+
+    @respx.mock
+    def test_distribute_already_rewarded_raises(self):
+        respx.post(f"{BASE}/markets/bounties/{BOUNTY_ID}/distribute").mock(
+            return_value=httpx.Response(409, json={"detail": "already rewarded"})
+        )
+        with pytest.raises(AgentXError, match="409"):
+            make_client().distribute_bounty_rewards(BOUNTY_ID)
+
+    @respx.mock
+    def test_cancel_bounty(self):
+        respx.post(f"{BASE}/markets/bounties/{BOUNTY_ID}/cancel").mock(
+            return_value=httpx.Response(200, json=bounty_payload(status="cancelled"))
+        )
+        assert make_client().cancel_bounty(BOUNTY_ID).status == "cancelled"
+
+
+BOUNTY_ID = str(uuid4())
+
+
+def bounty_payload(**overrides) -> dict:
+    return {
+        "bounty_id":            BOUNTY_ID,
+        "creator_did":          "did:agentx:me",
+        "creator_id":           str(uuid4()),
+        "title":                "Fix bug",
+        "description":          "...",
+        "capability_required":  "python",
+        "reward_pool":          100,
+        "status":               "open",
+        "created_at":           "2024-01-01T00:00:00",
+        **overrides,
+    }
+
+
+class TestRequestApproval:
+    @respx.mock
+    def test_creates_proposal_post(self):
+        payload = {
+            "post_id":    str(uuid4()),
+            "author_did": "did:agentx:me",
+            "post_type":  "PROPOSAL",
+            "title":      "Approval request for task abc",
+            "content":    "Do it?",
+            "tags":       ["approval"],
+            "visibility": "PUBLIC",
+            "status":     "ACTIVE",
+            "created_at": "2024-01-01T00:00:00",
+        }
+        route = respx.post(f"{BASE}/posts").mock(return_value=httpx.Response(200, json=payload))
+        make_client().request_approval("abc", "Do it?")
+        assert route.called
+        sent = json.loads(route.calls[0].request.content)
+        assert sent["post_type"] == "PROPOSAL"
+        assert "approval" in sent["tags"]
+
+
+# ── AgentRuntime ──────────────────────────────────────────────────────────────
+
+class TestAgentRuntime:
+    def _runtime_with_events(self, events: list[Event]):
+        client = make_client()
+        client.listen_events = MagicMock(return_value=iter(events))
+        return AgentRuntime(client, memory_size=10)
+
+    def test_memory_accumulates(self):
+        events = [Event(type="HEARTBEAT"), Event(type="NEW_POST", data={"title": "hi"})]
+        runtime = self._runtime_with_events(events)
+
+        seen = []
+        def handler(event, memory):
+            seen.append(len(memory))
+            return None
+
+        runtime.run(handler)
+        assert seen == [1, 2]
+
+    def test_action_dispatched(self):
+        events = [Event(type="NEW_POST", data={"post_id": "abc"})]
+        runtime = self._runtime_with_events(events)
+
+        actions = []
+        runtime.client.act = lambda **kw: actions.append(kw) or MagicMock()
+
+        def handler(event, memory):
+            if event.type == "NEW_POST":
+                return {"action_type": "ACCEPT_TASK", "data": event.data}
+            return None
+
+        runtime.run(handler)
+        assert len(actions) == 1
+        assert actions[0]["action_type"] == "ACCEPT_TASK"
+
+    def test_handler_exception_does_not_crash_loop(self):
+        events = [Event(type="A"), Event(type="B")]
+        runtime = self._runtime_with_events(events)
+
+        processed = []
+
+        def handler(event, memory):
+            if event.type == "A":
+                raise ValueError("boom")
+            processed.append(event.type)
+            return None
+
+        runtime.run(handler)
+        assert processed == ["B"]
+
+    def test_memory_capped(self):
+        runtime = self._runtime_with_events([Event(type=str(i)) for i in range(20)])
+
+        sizes = []
+        def handler(event, memory):
+            sizes.append(len(memory))
+            return None
+
+        runtime.run(handler)
+        # memory_size=10 — max length is 10
+        assert max(sizes) == 10
+
+
+# ── Event model ───────────────────────────────────────────────────────────────
+
+class TestEventModel:
+    def test_defaults(self):
+        e = Event(type="HEARTBEAT")
+        assert e.data      == {}
+        assert e.timestamp is None
+
+    def test_with_data(self):
+        e = Event(type="NEW_POST", data={"title": "x"}, timestamp="2024-01-01T00:00:00Z")
+        assert e.data["title"] == "x"
+
+
+# ── Retry (smoke test without real sleeps) ────────────────────────────────────
+
+class TestRetry:
+    @respx.mock
+    def test_no_retry_on_404(self):
+        """404 should raise immediately — never retried."""
+        route = respx.get(f"{BASE}/agents/x").mock(
+            return_value=httpx.Response(404, json={"detail": "nope"})
+        )
+        with pytest.raises(NotFoundError):
+            make_client().get_agent("x")
+        assert route.call_count == 1
+
+    @respx.mock
+    def test_server_error_propagates_when_retries_exhausted(self):
+        respx.post(f"{BASE}/tasks/route").mock(
+            return_value=httpx.Response(500, json={"detail": "boom"})
+        )
+        with pytest.raises(ServerError):
+            make_client().act("DO", data={})

@@ -1,8 +1,10 @@
 __pycache__/
-*.pyc
-.env
-.venv
+*.py[co]
+.venv/
+.pytest_cache/
 dist/
 build/
 *.egg-info/
-.agentx_identity.json
+node_modules/
+.env
+.env.*

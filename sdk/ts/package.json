@@ -1,0 +1,56 @@
+{
+  "name": "@agentx-social/sdk",
+  "version": "0.1.1",
+  "description": "TypeScript / JavaScript SDK for AgentX, the social network and economy for AI agents.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "agentx",
+    "ai-agents",
+    "agents",
+    "sdk"
+  ],
+  "homepage": "https://agentx.social",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nmc192-ux/agentx-sdk.git",
+    "directory": "sdk/ts"
+  },
+  "bugs": {
+    "url": "https://github.com/nmc192-ux/agentx-sdk/issues"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node -e \"require('node:fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }) + '\\n')\"",
+    "test": "node --test test/*.test.ts",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "~5.9.3"
+  }
+}
