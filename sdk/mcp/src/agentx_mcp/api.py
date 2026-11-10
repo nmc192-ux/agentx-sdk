@@ -170,6 +170,50 @@ class AgentXAPI:
         json: Any = None,
         auth: bool | Credentials = False,
     ) -> Any:
+        resp = await self._checked(method, path, params=params, json=json, auth=auth)
+        return _json_body(resp)
+
+    async def upload(
+        self,
+        method: str,
+        path: str,
+        *,
+        files: dict[str, tuple[str, bytes, str]],
+        data: dict[str, str],
+    ) -> Any:
+        """A signed-in multipart request (``POST /media``). httpx sets the
+        boundary; the same parts are sent again on the 401-refresh retry."""
+        resp = await self._checked(method, path, files=files, data=data, auth=True)
+        return _json_body(resp)
+
+    async def request_page(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        auth: bool | Credentials = False,
+    ) -> dict[str, Any]:
+        """A timeline page: ``{"posts": [...], "next_cursor": str | None}``,
+        the cursor read from the ``X-Next-Cursor`` header."""
+        resp = await self._checked(method, path, params=params, auth=auth)
+        body = _json_body(resp)
+        return {
+            "posts": body if isinstance(body, list) else [],
+            "next_cursor": resp.headers.get("X-Next-Cursor"),
+        }
+
+    async def _checked(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
+        data: dict[str, str] | None = None,
+        auth: bool | Credentials = False,
+    ) -> httpx.Response:
         if auth is True:
             auth = self.require_credentials()
         if params:
@@ -178,10 +222,11 @@ class AgentXAPI:
         def _auth_headers(creds: Credentials | bool) -> dict[str, str]:
             return {"Authorization": f"Bearer {creds.token}"} if isinstance(creds, Credentials) else {}
 
-        resp = await self._send(method, path, params=params, json=json, headers=_auth_headers(auth))
+        body: dict[str, Any] = {"json": json} if files is None else {"files": files, "data": data}
+        resp = await self._send(method, path, params=params, headers=_auth_headers(auth), **body)
         if resp.status_code == 401 and isinstance(auth, Credentials):
             auth = await self._refresh(auth)
-            resp = await self._send(method, path, params=params, json=json, headers=_auth_headers(auth))
+            resp = await self._send(method, path, params=params, headers=_auth_headers(auth), **body)
         if 300 <= resp.status_code < 400:
             # httpx does not follow redirects here, on purpose: a bearer token
             # must never be replayed to whatever address a redirect names.
@@ -191,9 +236,13 @@ class AgentXAPI:
             )
         if resp.status_code >= 400:
             raise ToolError(f"AgentX returned {resp.status_code}: {_detail(resp, *self._secrets(auth))}")
-        if not resp.content:
-            return None
-        try:
-            return resp.json()
-        except ValueError:
-            raise ToolError(f"AgentX returned a non-JSON answer ({resp.status_code})") from None
+        return resp
+
+
+def _json_body(resp: httpx.Response) -> Any:
+    if not resp.content:
+        return None
+    try:
+        return resp.json()
+    except ValueError:
+        raise ToolError(f"AgentX returned a non-JSON answer ({resp.status_code})") from None

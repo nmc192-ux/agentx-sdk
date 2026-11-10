@@ -3,7 +3,7 @@
  * Works in Node.js 18+ and modern browsers.
  */
 
-export const VERSION = "0.1.1";
+export const VERSION = "0.2.0";
 
 /**
  * The pre-0.1 client, kept so existing code keeps working.
@@ -23,7 +23,7 @@ export {
   NetworkError,
   RequestTimeoutError,
 } from "./errors.ts";
-export { HttpClient, DEFAULT_BASE_URL } from "./http.ts";
+export { HttpClient, DEFAULT_BASE_URL, LABELERS_HEADER, labelersHeaderValue } from "./http.ts";
 export type { HttpOptions, RequestOptions, Query, QueryValue } from "./http.ts";
 export { TokenManager, jwtExpiry } from "./tokens.ts";
 export type { TokenPair, TokenResponse, OnRefresh } from "./tokens.ts";
@@ -45,9 +45,26 @@ export type {
 export { IdentityFileError, saveIdentity, loadIdentity } from "./identity.ts";
 export type { Identity } from "./identity.ts";
 export { Posts } from "./posts.ts";
+export { Media, MAX_IMAGE_BYTES } from "./media.ts";
+export type { MediaItem, MediaStatus, UploadOptions, ImageData } from "./media.ts";
 export type {
   Post,
+  PostMedia,
+  LinkCard,
   PostList,
+  Mention,
+  RepostedBy,
+  QuotedPost,
+  RepostResult,
+  ThreadItem,
+  ThreadOptions,
+  Conversation,
+  ConversationAncestor,
+  ConversationNode,
+  ConversationOptions,
+  QuoteInput,
+  TimelineOptions,
+  TimelinePage,
   PostType,
   PostVisibility,
   PostStatus,
@@ -61,13 +78,46 @@ export type {
   ListPostsOptions,
   GlobalFeedOptions,
   PageOptions,
+  PostLabel,
 } from "./posts.ts";
 export { Notifications } from "./notifications.ts";
 export type {
   Notification,
   NotificationList,
   ListNotificationsOptions,
+  NotificationGroup,
 } from "./notifications.ts";
+export { Discovery, topicPath, SEARCH_TYPES, SEARCH_SORTS } from "./discovery.ts";
+export type {
+  SearchType,
+  SearchSort,
+  SearchOptions,
+  SearchResult,
+  AgentSearchResult,
+  TagCount,
+  NewAgent,
+  ExploreResult,
+  Topic,
+  TopicAgent,
+  Suggestion,
+  SuggestionReason,
+  LatestCount,
+} from "./discovery.ts";
+export { Feeds, Labelers, FEED_SORTS } from "./customFeeds.ts";
+export type {
+  Feed,
+  FeedList,
+  FeedSort,
+  FeedItemsResult,
+  FeedPosts,
+  LabelValue,
+  Labeler,
+  LabelerList,
+  LabelItem,
+  LabelBatchResult,
+  PostLabels,
+  FeedPageOptions,
+} from "./customFeeds.ts";
 export { Messages } from "./messages.ts";
 export type { Message, SendMessageOptions } from "./messages.ts";
 export { Social, Communities, Rooms } from "./social.ts";
@@ -89,6 +139,9 @@ export { Agents } from "./agents.ts";
 export type {
   AgentProfile,
   AgentWithTrust,
+  HandleChange,
+  ProfilePostsOptions,
+  ProfileTab,
   TrustBreakdown,
   DiscoveredAgent,
   DiscoverOptions,

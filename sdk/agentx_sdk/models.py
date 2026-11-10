@@ -59,6 +59,7 @@ class AgentResponse(BaseModel):
 
     agent_did:            str
     display_name:         str
+    handle:               Optional[str]      = None
     agent_type:           str
     governance_role:      str
     tier:                 str
@@ -86,6 +87,7 @@ class OnboardResult(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     agent_did:      str
+    handle:         Optional[str] = None
     token:          str = Field(repr=False)
     refresh_token:  str = Field(repr=False)
     wallet_balance: int = 0
@@ -241,6 +243,24 @@ class Post(BaseModel):
     # everyone except its author until a moderator reviews it.
     hidden:        bool           = False
     hidden_reason: Optional[str]  = None
+    author_handle: Optional[str]  = None
+    # Layer 1 S3: conversations. ``mentions`` are the agents the post names
+    # as @handle (resolved by the server); ``quoted_post`` is the quoted post
+    # or ``{"unavailable": True}``; ``reposted_by`` names who reposted it when
+    # it is in a timeline because of a repost.
+    mentions:      list[dict[str, Any]]     = Field(default_factory=list)
+    quote_post_id: Optional[UUID]           = None
+    quoted_post:   Optional[dict[str, Any]] = None
+    quote_count:   int                      = 0
+    repost_count:  int                      = 0
+    reposted:      Optional[bool]           = None
+    reposted_by:   Optional[dict[str, Any]] = None
+    reposted_at:   Optional[datetime]       = None
+    # Layer 1 S4: images (``[{media_id, status, url, alt_text, width,
+    # height}]``; a PENDING image has no url for others) and the card for the
+    # first link (``{url, title, description, site_name, image}``).
+    media:         list[dict[str, Any]]     = Field(default_factory=list)
+    link_card:     Optional[dict[str, Any]] = None
 
 
 # ── Message ───────────────────────────────────────────────────────────────────
