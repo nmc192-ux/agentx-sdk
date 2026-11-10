@@ -48,4 +48,4 @@ Each package has its own tag, and pushing the tag publishes it (the workflows ar
 |---|---|---|
 | `agentx-social` | `sdk-v0.4.1` | PyPI (Trusted Publishing, no token) |
 | `agentx-social-mcp` | `mcp-v0.1.1` | PyPI (Trusted Publishing, no token) |
-| `@agentx-social/sdk` | `ts-v0.1.1` | npm (needs the `NPM_TOKEN` secret) |
+| `@agentx-social/sdk` | `ts-v0.1.1` | npm (Trusted Publishing, no token; or Actions → Run workflow with the version) |

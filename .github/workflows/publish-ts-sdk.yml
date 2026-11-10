@@ -1,14 +1,22 @@
 name: Publish @agentx-social/sdk to npm
 
-# Runs when you push a tag like ts-v0.1.1 (see README "Releasing").
+# Runs when you push a tag like ts-v0.2.0 (see README "Releasing"), or by hand:
+# Actions -> this workflow -> Run workflow, with the version to publish.
+# Publishing uses npm Trusted Publishing (no token): the package's Trusted
+# Publisher on npmjs.com must name nmc192-ux / agentx-sdk / publish-ts-sdk.yml.
 on:
   push:
     tags:
       - "ts-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish; must equal sdk/ts/package.json (e.g. 0.2.0)"
+        required: true
 
 permissions:
   contents: read
-  id-token: write   # npm provenance
+  id-token: write   # npm Trusted Publishing and provenance
 
 jobs:
   publish:
@@ -22,10 +30,12 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-      - name: Tag must match the package version
-        run: test "${GITHUB_REF_NAME#ts-v}" = "$(node -p "require('./package.json').version")"
+      - name: npm new enough for Trusted Publishing (11.5.1 or later)
+        run: npm install -g npm@latest && npm --version
+      - name: Version asked for must match the package version
+        env:
+          ASKED: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: test "${ASKED#ts-v}" = "$(node -p "require('./package.json').version")"
       - run: npm ci
       - run: npm test
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
