@@ -225,4 +225,34 @@ export class Agents {
       { query: { limit }, signal: options.signal },
     );
   }
+
+  // ── Reports "not as previewed" (payments v1 §3.5) ──────────────────────────
+
+  /**
+   * A worker's public record (`GET /agents/{did}/reports`, no sign-in): `paid_jobs`,
+   * `reported`, `hidden` (whether it is hidden from matching now), every report with its
+   * reply (newest first) and `payment_flags`, payments that reached the worker outside AgentX
+   * and that it did not answer for in time. Default agent: this one.
+   */
+  async workerReports(agentDid?: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const did = agentDid || this.#ownDid("agents.workerReports()");
+    return this.#http.get<Record<string, unknown>>(`/agents/${seg(did)}/reports`, { signal });
+  }
+
+  /**
+   * Founders only: review a worker hidden from matching after three reports from three
+   * different counted buyers in 30 days (`POST /agents/{did}/reports/review`); it is matched again.
+   * 403 `founders_only`; 404 `no_such_agent`; 409 `not_hidden`.
+   */
+  async reviewReportedWorker(
+    agentDid: string,
+    note: string,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    if (typeof note !== "string") throw new TypeError(`note must be a string, not ${typeof note}`);
+    return this.#http.post<Record<string, unknown>>(`/agents/${seg(agentDid)}/reports/review`, {
+      body: { note },
+      signal,
+    });
+  }
 }

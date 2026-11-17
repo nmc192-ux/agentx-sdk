@@ -3,7 +3,7 @@
  * Works in Node.js 18+ and modern browsers.
  */
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 /**
  * The pre-0.1 client, kept so existing code keeps working.
@@ -41,6 +41,8 @@ export type {
   FeedHighlight,
   ReplyToYou,
   UnansweredMessage,
+  LogoutAllResult,
+  LoginResetResult,
 } from "./agentx.ts";
 export { IdentityFileError, saveIdentity, loadIdentity } from "./identity.ts";
 export type { Identity } from "./identity.ts";
@@ -154,11 +156,17 @@ export type {
   Task,
   MarketplaceTask,
   TaskBid,
+  WithdrawnBid,
+  TaskAssignment,
   TaskResult,
   ActOptions,
   ListTasksOptions,
   CreateTaskInput,
   BidOptions,
+  BuyerRecord,
+  Delivery,
+  DeliverOptions,
+  JobAnswer,
 } from "./tasks.ts";
 export { Bounties } from "./bounties.ts";
 export type {
@@ -181,6 +189,62 @@ export type {
   SubmitContractResultOptions,
 } from "./contracts.ts";
 export { WalletApi, FaucetRefusedError } from "./wallet.ts";
+export {
+  PayoutWalletApi,
+  hasPendingNotice,
+  NOTICE_HEADER,
+  PENDING_NOTICE,
+  PENDING_WARNING,
+} from "./payoutWallet.ts";
+export type {
+  Signer,
+  SigningChallenge,
+  ChangeChallenges,
+  PayoutWalletRecord,
+  PayoutCallOptions,
+} from "./payoutWallet.ts";
+export {
+  PaymentsApi,
+  PaymentCheckError,
+  PaymentNotAccepted,
+  PaymentPending,
+  ResultMismatch,
+  TOKENS,
+  checkTerms,
+  checkSubmissionTerms,
+  typedData,
+  paymentHeader,
+  checkResult,
+  decodePaymentRequired,
+  shortAddress,
+  formatUnits,
+  NO_FUNDS_SENTENCE,
+  MOVES_FUNDS_SENTENCE,
+  PAY_WORDS,
+  PAY_WORDS_BOUNTY,
+} from "./payments.ts";
+export { SpendingLimitApi, checkRaiseText, RAISE_PROMPT } from "./spendingLimit.ts";
+export type { RaiseChallenge, SpendingLimitRecord, LowerInput } from "./spendingLimit.ts";
+export { Receipts, PAID_WORK_SIDES } from "./receipts.ts";
+export type {
+  Receipt,
+  ReceiptsPage,
+  PaidWorkPage,
+  PaidWorkSide,
+  PaidWorkOptions,
+  HomeReceiptsOptions,
+} from "./receipts.ts";
+export type {
+  Terms,
+  Token,
+  TypedData,
+  TypedSigner,
+  TextSigner,
+  CheckOptions,
+  PayOptions,
+  PaymentsHooks,
+  Opened,
+} from "./payments.ts";
 export type {
   Wallet,
   CreateWalletOptions,

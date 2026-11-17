@@ -67,7 +67,7 @@ def _python_requests() -> list[dict]:
         seen.append(_norm(request.method, str(request.url), body))
         is_list = request.method == "GET" and (
             request.url.path in ("/tasks", "/markets/bounties", "/contracts")
-            or request.url.path.endswith(("/results", "/submissions"))
+            or request.url.path.endswith(("/results", "/submissions", "/bids"))
         )
         return httpx.Response(200, json=[] if is_list else RECORD)
 
@@ -82,8 +82,13 @@ def _python_requests() -> list[dict]:
     c.list_tasks(status="assigned", limit=5)
     c.create_task("review", {"q": 1}, reward=25)
     c.create_task("review")
+    c.create_task("review", {"q": 1}, price_usd="12.50")
     c.bid_on_task(TASK)
     c.bid_on_task(TASK, confidence=0.4, bid_price=3)
+    c.bid_on_task(TASK, confidence=0.4, bid_usd="8.00")
+    c.list_task_bids(TASK)
+    c.accept_task_bid(TASK, BID)
+    c.withdraw_bid(TASK, BID)
     c.submit_marketplace_result(TASK, {"answer": 42})
     c.task_results(TASK)
     c.approve_task_result(TASK)
@@ -97,6 +102,8 @@ def _python_requests() -> list[dict]:
     c.create_bounty(BountyCreate(title="t", description="d", capability_required="sql",
                                  reward_pool=10,
                                  deadline=datetime(2026, 12, 1, tzinfo=timezone.utc)))
+    c.create_bounty(BountyCreate(title="t", description="d", capability_required="sql",
+                                 price_usd="12.50"))
     c.list_bounties()
     c.list_bounties(status="open", capability="sql", limit=5, offset=10)
     c.get_bounty(BOUNTY)
@@ -145,8 +152,13 @@ await t.list();
 await t.list({ status: "assigned", limit: 5 });
 await t.create({ taskType: "review", payload: { q: 1 }, reward: 25 });
 await t.create({ taskType: "review" });
+await t.create({ taskType: "review", payload: { q: 1 }, priceUsd: "12.50" });
 await t.bid(TASK);
 await t.bid(TASK, { confidence: 0.4, bidPrice: 3 });
+await t.bid(TASK, { confidence: 0.4, bidUsd: "8.00" });
+await t.bids(TASK);
+await t.acceptBid(TASK, BID);
+await t.withdrawBid(TASK, BID);
 await t.submitResult(TASK, { answer: 42 });
 await t.results(TASK);
 await t.approve(TASK);
@@ -158,6 +170,7 @@ await t.reclaim(TASK);
 await b.create({ title: "t", description: "d", capabilityRequired: "sql", rewardPool: 10 });
 await b.create({ title: "t", description: "d", capabilityRequired: "sql", rewardPool: 10,
                  deadline: "2026-12-01T00:00:00Z" });
+await b.create({ title: "t", description: "d", capabilityRequired: "sql", priceUsd: "12.50" });
 await b.list();
 await b.list({ status: "open", capability: "sql", limit: 5, offset: 10 });
 await b.get(BOUNTY);
@@ -203,6 +216,6 @@ def test_ts_tasks_bounties_and_contracts_match_agentx_social():
     if node is None:
         pytest.skip("Node >= 22.18 not available")
     py, ts = _python_requests(), _ts_requests(node)
-    assert len(py) == len(ts) == 41
+    assert len(py) == len(ts) == 47
     for i, (p, t) in enumerate(zip(py, ts)):
         assert p == t, f"call {i}: agentx-social {p} != @agentx-social/sdk {t}"

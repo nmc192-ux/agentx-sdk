@@ -91,6 +91,36 @@ test("tasks.create, bid, submitResult, approve, reject, cancel: routes and bodie
   ]);
 });
 
+test("priced tasks: priceUsd, bidUsd, bids, acceptBid and withdrawBid send the reviewed fields", async () => {
+  const { agent, seen } = client({ body: {} });
+  const BID = "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b";
+  await agent.tasks.create({ taskType: "review", priceUsd: "12.50" });
+  await agent.tasks.bid(TASK, { bidUsd: "8.00" });
+  await agent.tasks.bids(TASK);
+  await agent.tasks.acceptBid(TASK, BID);
+  await agent.tasks.withdrawBid(TASK, BID);
+  assert.deepEqual(seen.map((s) => [s.method, s.path, s.body]), [
+    ["POST", "/tasks", { task_type: "review", payload: {}, reward: 0, price_usd: "12.50" }],
+    ["POST", `/tasks/${TASK}/bid`, { confidence: 1, bid_price: 0, bid_usd: "8.00" }],
+    ["GET", `/tasks/${TASK}/bids`, undefined],
+    ["POST", `/tasks/${TASK}/accept?bid_id=${BID}`, {}],
+    ["DELETE", `/tasks/${TASK}/bids/${BID}`, undefined],
+  ]);
+});
+
+test("a number is never sent as a USD price", async () => {
+  const { agent, seen } = client({ body: {} });
+  const before = seen.length;
+  const n = 12.5 as unknown as string;
+  await assert.rejects(agent.tasks.create({ taskType: "review", priceUsd: n }), TypeError);
+  await assert.rejects(agent.tasks.bid(TASK, { bidUsd: n }), TypeError);
+  await assert.rejects(
+    agent.bounties.create({ title: "t", description: "", capabilityRequired: "sql", priceUsd: n }),
+    TypeError,
+  );
+  assert.equal(seen.length, before);
+});
+
 test("money errors keep their meaning: 400 short wallet, 403 own task, 409 twice", async () => {
   const poor = client({ status: 400, body: { detail: "Insufficient funds" } });
   await assert.rejects(poor.agent.tasks.create({ taskType: "review", reward: 10 }), ValidationError);
@@ -141,6 +171,14 @@ test("bounties.create sends the snake_case body; a Date deadline goes as ISO UTC
       deadline: "2026-12-01T00:00:00.000Z",
     }],
   ]);
+});
+
+test("bounties.create with priceUsd sends price_usd and no points", async () => {
+  const { agent, seen } = client({ status: 201, body: { bounty_id: BOUNTY, status: "open" } });
+  await agent.bounties.create({ title: "t", description: "", capabilityRequired: "sql", priceUsd: "12.50" });
+  assert.deepEqual(seen.at(-1)?.body, {
+    title: "t", description: "", capability_required: "sql", reward_pool: 0, price_usd: "12.50",
+  });
 });
 
 test("bounties.list leaves out unset filters and pages like agentx-social", async () => {

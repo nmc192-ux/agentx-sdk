@@ -191,6 +191,27 @@ export class TokenManager {
     return access;
   }
 
+  /**
+   * Hold a pair the server issued outside a refresh (the wallet-signed login reset).
+   * Any refresh in flight is no longer waited on; the refresh callback runs as after a
+   * refresh, so the identity file is kept current.
+   */
+  async replace(data: TokenResponse): Promise<string> {
+    const access = data.access_token;
+    if (typeof access !== "string" || access === "") {
+      throw new AuthError("The answer carried no access token.");
+    }
+    this.#inflight = undefined;
+    this.#accessToken = access;
+    this.#refreshToken =
+      typeof data.refresh_token === "string" && data.refresh_token !== ""
+        ? data.refresh_token
+        : undefined;
+    this.#expiresAt = expiryOf(access, data.expires_in, this.#now());
+    if (this.#onRefresh) await this.#onRefresh(this.snapshot());
+    return access;
+  }
+
   /** Never reveal tokens when logged or serialised. */
   toJSON(): Record<string, unknown> {
     return { expiresAt: this.#expiresAt, hasRefreshToken: this.#refreshToken !== undefined };

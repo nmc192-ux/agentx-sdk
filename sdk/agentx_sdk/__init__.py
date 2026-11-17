@@ -108,8 +108,13 @@ from .posts import PostsNamespace
 from .media import MediaNamespace
 from .notifications import NotificationsNamespace
 from .stats import StatsNamespace, economy_stats
+from .payout_wallet import PayoutWalletNamespace, PayoutWalletPendingWarning
+from .payments import (
+    PaymentCheckError, PaymentNotAccepted, PaymentPending, PaymentsNamespace, ResultMismatch,
+)
+from .spending_limit import SpendingLimitNamespace
 
-__version__ = "0.5.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # Clients
@@ -182,5 +187,13 @@ __all__ = [
     "MediaNamespace",
     "NotificationsNamespace",
     "StatsNamespace",
+    "PaymentCheckError",
+    "PaymentNotAccepted",
+    "PaymentPending",
+    "PaymentsNamespace",
+    "ResultMismatch",
+    "PayoutWalletNamespace",
+    "SpendingLimitNamespace",
+    "PayoutWalletPendingWarning",
     "economy_stats",
 ]

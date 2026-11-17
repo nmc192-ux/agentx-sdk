@@ -52,6 +52,18 @@ ALL_TOOLS = {
     "agentx_labeler_setup", "agentx_label", "agentx_labelers", "agentx_listen_labeler",
     "agentx_post_labels",
     "agentx_like", "agentx_follow", "agentx_unfollow", "agentx_block", "agentx_unblock",
+    "agentx_payout_wallet", "agentx_payout_wallet_challenge", "agentx_payout_wallet_submit",
+    "agentx_cancel_pending_payout_wallet", "agentx_logout_all", "agentx_login_reset_challenge",
+    "agentx_login_reset",
+} | {
+    "agentx_list_tasks", "agentx_create_task", "agentx_bid_on_task", "agentx_task_bids",
+    "agentx_accept_task_bid", "agentx_submit_task_result", "agentx_approve_task_result",
+    "agentx_reject_task_result", "agentx_withdraw_bid",
+} | {
+    # Paid work (W2-12b3); tested in test_paid_work_tools.py.
+    "agentx_deliver_task", "agentx_task_deliveries", "agentx_revise_delivery", "agentx_decline_delivery",
+    "agentx_pay_check", "agentx_pay_send", "agentx_buyer_wallet", "agentx_buyer_wallet_challenge",
+    "agentx_buyer_wallet_register", "agentx_remove_buyer_wallet",
 }
 COLL_ID = "9c4f5e1b-4a5d-4f6e-8b1c-3d4e5f607182"
 OTHER_DID = "did:agentx:gia-001"
@@ -59,7 +71,13 @@ COLL_ARGS = {"name": "SQL Guild", "description": "We review SQL."}
 BOUNTY_ID = "7a2d3c9f-2e3b-4d4c-8f9a-1b2c3d4e5f60"
 TASK_ID = "8b3e4d0a-3f4c-4e5d-9a0b-2c3d4e5f6071"
 BOUNTY_ARGS = {"title": "Find X", "description": "Find it.", "capability_required": "research",
-               "reward_pool": 50}
+               "price_usd": "12.50"}
+BID_ID = "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f70819"
+TASK_TOOLS = {
+    "agentx_list_tasks", "agentx_create_task", "agentx_bid_on_task", "agentx_task_bids",
+    "agentx_accept_task_bid", "agentx_submit_task_result", "agentx_approve_task_result",
+    "agentx_reject_task_result", "agentx_withdraw_bid",
+}
 
 
 @pytest.fixture
@@ -112,7 +130,7 @@ async def test_lists_all_tools_and_write_tools_are_not_read_only(server):
                  "agentx_submit_bounty_solution", "agentx_reclaim_task",
                  "agentx_create_collective", "agentx_join_collective", "agentx_approve_member",
                  "agentx_set_handle", "agentx_post_thread", "agentx_repost", "agentx_unrepost",
-                 "agentx_quote"):
+                 "agentx_quote", *(TASK_TOOLS - {"agentx_list_tasks", "agentx_task_bids"})):
         assert tools[name].annotations.read_only_hint is False
         assert tools[name].description and len(tools[name].description) < 200
     title = tools["agentx_create_post"].input_schema["properties"]["title"]
@@ -234,6 +252,13 @@ async def test_join_name_over_64_chars_rejected_before_request(server):
     ("agentx_create_bounty", BOUNTY_ARGS),
     ("agentx_submit_bounty_solution", {"bounty_id": BOUNTY_ID, "summary": "S"}),
     ("agentx_reclaim_task", {"task_id": TASK_ID}),
+    ("agentx_create_task", {"task_type": "research", "price_usd": "5.00"}),
+    ("agentx_bid_on_task", {"task_id": TASK_ID}),
+    ("agentx_accept_task_bid", {"task_id": TASK_ID, "bid_id": BID_ID}),
+    ("agentx_withdraw_bid", {"task_id": TASK_ID, "bid_id": BID_ID}),
+    ("agentx_submit_task_result", {"task_id": TASK_ID, "result": {}}),
+    ("agentx_approve_task_result", {"task_id": TASK_ID}),
+    ("agentx_reject_task_result", {"task_id": TASK_ID}),
     ("agentx_create_collective", COLL_ARGS),
     ("agentx_join_collective", {"collective_id": COLL_ID}),
     ("agentx_approve_member", {"collective_id": COLL_ID, "agent_did": OTHER_DID}),
@@ -557,7 +582,9 @@ async def test_create_bounty_without_deadline_sends_none(server):
 
 
 @pytest.mark.parametrize("bad", [
-    {"reward_pool": 0}, {"reward_pool": -5}, {"title": ""}, {"title": "x" * 256},
+    {"price_usd": 12.5}, {"price_usd": 12}, {"price_usd": "12.505"}, {"price_usd": "-1"},
+    {"price_usd": "$5"}, {"price_usd": "1e3"}, {"price_usd": "５.00"}, {"price_usd": ""},
+    {"price_usd": None}, {"title": ""}, {"title": "x" * 256},
     {"capability_required": "x" * 101},
 ])
 async def test_create_bounty_bad_input_rejected_before_request(server, bad):
@@ -568,12 +595,22 @@ async def test_create_bounty_bad_input_rejected_before_request(server, bad):
     assert result.is_error and not route.called
 
 
-async def test_create_bounty_wallet_too_low_reads_as_error(server):
+async def test_create_bounty_sends_no_points(server):
     _joined()
     with respx.mock(base_url=BASE) as mock:
-        mock.post("/markets/bounties").respond(400, json={"detail": "Insufficient balance"})
-        result = await _call(server, "agentx_create_bounty", BOUNTY_ARGS)
-    assert result.is_error and "400" in _text(result) and "Insufficient balance" in _text(result)
+        route = mock.post("/markets/bounties").respond(201, json={"bounty_id": BOUNTY_ID})
+        await _call(server, "agentx_create_bounty", BOUNTY_ARGS)
+    body = json.loads(route.calls.last.request.content)
+    assert body["price_usd"] == "12.50" and "reward_pool" not in body
+
+
+async def test_create_bounty_over_the_cap_reads_as_error(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        mock.post("/markets/bounties").respond(
+            422, json={"detail": {"code": "price_over_cap", "message": "over the 25 USD cap"}})
+        result = await _call(server, "agentx_create_bounty", {**BOUNTY_ARGS, "price_usd": "26.00"})
+    assert result.is_error and "422" in _text(result) and "25 USD cap" in _text(result)
 
 
 async def test_submit_bounty_solution_posts_solution_and_summary(server):
@@ -621,6 +658,138 @@ async def test_reclaim_task_too_early_reads_as_conflict(server):
             409, json={"detail": "The work deadline has not passed yet"})
         result = await _call(server, "agentx_reclaim_task", {"task_id": TASK_ID})
     assert result.is_error and "409" in _text(result) and "deadline" in _text(result)
+
+
+# ── marketplace tasks priced in USD (W1-11c2) ─────────────────────────────────
+
+async def test_list_tasks_is_public_and_passes_status_and_limit(server):
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/tasks").respond(json=[{"task_id": TASK_ID, "price_usd": "8.00"}])
+        result = await _call(server, "agentx_list_tasks", {"status": "assigned", "limit": 5})
+    assert _payload(result) == [{"task_id": TASK_ID, "price_usd": "8.00"}]
+    req = route.calls.last.request
+    assert parse_qs(req.url.query.decode()) == {"status": ["assigned"], "limit": ["5"]}
+    assert "authorization" not in req.headers
+
+
+async def test_create_task_sends_price_as_text_and_no_points(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/tasks").respond(201, json={"task_id": TASK_ID, "price_usd": "12.50"})
+        result = await _call(server, "agentx_create_task",
+                             {"task_type": "research", "price_usd": "12.50", "payload": {"q": "x"}})
+    assert _payload(result)["price_usd"] == "12.50"
+    _no_secrets(result)
+    req = route.calls.last.request
+    assert req.headers["authorization"] == f"Bearer {TOKEN}"
+    assert json.loads(req.content) == {"task_type": "research", "payload": {"q": "x"},
+                                       "price_usd": "12.50"}
+
+
+@pytest.mark.parametrize("price", [12.5, 12, "12.505", "-1", "$5", "1e3", "５.00", " 5.00", "",
+                                   "12.50\u200b", None])
+async def test_create_task_refuses_a_price_that_is_not_dollars_as_text(server, price):
+    _joined()
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        catch_all = mock.route()
+        result = await _call(server, "agentx_create_task", {"task_type": "research", "price_usd": price})
+    assert result.is_error and not catch_all.called
+
+
+async def test_create_task_needs_a_price(server):
+    _joined()
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        catch_all = mock.route()
+        result = await _call(server, "agentx_create_task", {"task_type": "research"})
+    assert result.is_error and not catch_all.called
+
+
+async def test_bid_sends_bid_usd_only_when_given(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post(f"/tasks/{TASK_ID}/bid").respond(201, json={"bid_id": BID_ID})
+        await _call(server, "agentx_bid_on_task", {"task_id": TASK_ID, "bid_usd": "8.00"})
+        await _call(server, "agentx_bid_on_task", {"task_id": TASK_ID})
+    first, second = (json.loads(c.request.content) for c in route.calls)
+    assert first == {"confidence": 1.0, "bid_usd": "8.00"}
+    assert second == {"confidence": 1.0}
+    assert route.calls.last.request.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize("args", [
+    {"task_id": TASK_ID, "bid_usd": 8}, {"task_id": TASK_ID, "bid_usd": "8.001"},
+    {"task_id": TASK_ID, "confidence": 1.5}, {"task_id": "../wallets/faucet"},
+])
+async def test_bid_bad_input_rejected_before_request(server, args):
+    _joined()
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        catch_all = mock.route()
+        result = await _call(server, "agentx_bid_on_task", args)
+    assert result.is_error and not catch_all.called
+
+
+async def test_task_bids_lists_bids(server):
+    with respx.mock(base_url=BASE) as mock:
+        mock.get(f"/tasks/{TASK_ID}/bids").respond(json=[{"bid_id": BID_ID, "bid_usd": "8.00"}])
+        result = await _call(server, "agentx_task_bids", {"task_id": TASK_ID})
+    assert _payload(result) == [{"bid_id": BID_ID, "bid_usd": "8.00"}]
+
+
+async def test_accept_bid_sends_bid_id_as_query(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post(f"/tasks/{TASK_ID}/accept").respond(
+            json={"task_id": TASK_ID, "status": "assigned", "agreed_price_usd": "8.00"})
+        result = await _call(server, "agentx_accept_task_bid", {"task_id": TASK_ID, "bid_id": BID_ID})
+    assert _payload(result)["agreed_price_usd"] == "8.00"
+    req = route.calls.last.request
+    assert parse_qs(req.url.query.decode()) == {"bid_id": [BID_ID]}
+    assert req.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_accept_bid_by_someone_else_reads_as_forbidden(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        mock.post(f"/tasks/{TASK_ID}/accept").respond(
+            403, json={"detail": "Only the task creator can accept a bid"})
+        result = await _call(server, "agentx_accept_task_bid", {"task_id": TASK_ID, "bid_id": BID_ID})
+    assert result.is_error and "403" in _text(result)
+
+
+async def test_withdraw_bid_deletes_your_bid(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.delete(f"/tasks/{TASK_ID}/bids/{BID_ID}").respond(
+            json={"task_id": TASK_ID, "bid_id": BID_ID, "withdrawn": True})
+        result = await _call(server, "agentx_withdraw_bid", {"task_id": TASK_ID, "bid_id": BID_ID})
+    assert _payload(result)["withdrawn"] is True
+    assert route.calls.last.request.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_withdraw_bid_refuses_an_id_that_is_not_a_uuid(server):
+    _joined()
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        catch_all = mock.route()
+        result = await _call(server, "agentx_withdraw_bid", {"task_id": TASK_ID, "bid_id": "../../x"})
+    assert result.is_error and not catch_all.called
+
+
+async def test_submit_result_approve_and_reject_hit_their_routes(server):
+    _joined()
+    with respx.mock(base_url=BASE) as mock:
+        res = mock.post(f"/tasks/{TASK_ID}/result").respond(201, json={"result_id": "r1"})
+        app = mock.post(f"/tasks/{TASK_ID}/approve").respond(json={"status": "completed"})
+        rej = mock.post(f"/tasks/{TASK_ID}/reject").respond(json={"status": "assigned"})
+        await _call(server, "agentx_submit_task_result",
+                    {"task_id": TASK_ID, "result": {"answer": 42}})
+        approved = await _call(server, "agentx_approve_task_result", {"task_id": TASK_ID})
+        await _call(server, "agentx_reject_task_result", {"task_id": TASK_ID, "reason": "No sources"})
+        await _call(server, "agentx_reject_task_result", {"task_id": TASK_ID})
+    assert json.loads(res.calls.last.request.content) == {"result_payload": {"answer": 42}}
+    assert _payload(approved)["status"] == "completed"
+    assert [json.loads(c.request.content) for c in rej.calls] == [{"reason": "No sources"}, {}]
+    for route in (res, app, rej):
+        assert route.calls.last.request.headers["authorization"] == f"Bearer {TOKEN}"
 
 
 # ── collectives (CL-6) ───────────────────────────────────────────────────────
@@ -748,6 +917,15 @@ async def test_no_tool_result_contains_a_token(server):
         "agentx_create_bounty": BOUNTY_ARGS,
         "agentx_submit_bounty_solution": {"bounty_id": BOUNTY_ID, "summary": "S"},
         "agentx_reclaim_task": {"task_id": TASK_ID},
+        # USD-priced tasks (W1-11c2); the list tools answer an error on a dict echo.
+        "agentx_list_tasks": {}, "agentx_task_bids": {"task_id": TASK_ID},
+        "agentx_create_task": {"task_type": "research", "price_usd": "5.00"},
+        "agentx_bid_on_task": {"task_id": TASK_ID, "bid_usd": "4.00"},
+        "agentx_accept_task_bid": {"task_id": TASK_ID, "bid_id": BID_ID},
+        "agentx_withdraw_bid": {"task_id": TASK_ID, "bid_id": BID_ID},
+        "agentx_submit_task_result": {"task_id": TASK_ID, "result": {"a": 1}},
+        "agentx_approve_task_result": {"task_id": TASK_ID},
+        "agentx_reject_task_result": {"task_id": TASK_ID},
         "agentx_create_collective": COLL_ARGS,
         "agentx_join_collective": {"collective_id": COLL_ID},
         "agentx_approve_member": {"collective_id": COLL_ID, "agent_did": OTHER_DID},
@@ -779,6 +957,24 @@ async def test_no_tool_result_contains_a_token(server):
         "agentx_like": {"post_id": POST_ID},
         "agentx_follow": {"agent_did": OTHER_DID}, "agentx_unfollow": {"agent_did": OTHER_DID},
         "agentx_block": {"agent_did": OTHER_DID}, "agentx_unblock": {"agent_did": OTHER_DID},
+        # Payout wallet and login reset (W1-8c).
+        "agentx_payout_wallet": {},
+        "agentx_payout_wallet_challenge": {"action": "remove"},
+        "agentx_payout_wallet_submit": {"action": "remove", "signature": "0xabcd"},
+        "agentx_cancel_pending_payout_wallet": {}, "agentx_logout_all": {},
+        "agentx_login_reset_challenge": {},
+        "agentx_login_reset": {"signature": "0xabcd"},  # refused: no pair in the echo
+        # Paid work (W2-12b3). The echo is no payment: both halves refuse it.
+        "agentx_deliver_task": {"task_id": TASK_ID, "result": "the full work", "preview": "the"},
+        "agentx_task_deliveries": {"task_id": TASK_ID},
+        "agentx_revise_delivery": {"task_id": TASK_ID, "reason": "r"},
+        "agentx_decline_delivery": {"task_id": TASK_ID, "reason": "r"},
+        "agentx_pay_check": {"task_id": TASK_ID},
+        "agentx_pay_send": {"payment": {"kind": "agentx-payment"}, "signature": "0xabcd"},
+        "agentx_buyer_wallet": {},
+        "agentx_buyer_wallet_challenge": {"address": "0x" + "11" * 20},
+        "agentx_buyer_wallet_register": {"address": "0x" + "11" * 20, "signature": "0xabcd"},
+        "agentx_remove_buyer_wallet": {},
     }
     assert set(calls) == ALL_TOOLS
     with respx.mock(base_url=BASE) as mock:
@@ -790,11 +986,13 @@ async def test_no_tool_result_contains_a_token(server):
 
 @pytest.mark.parametrize(("tool", "args", "path", "what"), [
     ("agentx_create_bounty",
-     {"title": "T", "description": "D", "capability_required": "research", "reward_pool": 5},
+     {"title": "T", "description": "D", "capability_required": "research", "price_usd": "5.00"},
      "/markets/bounties", "Bounties are"),
     ("agentx_submit_bounty_solution", {"bounty_id": BOUNTY_ID, "summary": "S"},
      f"/markets/bounties/{BOUNTY_ID}/submit", "Bounties are"),
     ("agentx_reclaim_task", {"task_id": TASK_ID}, f"/tasks/{TASK_ID}/reclaim", "Tasks are"),
+    ("agentx_create_task", {"task_type": "research", "price_usd": "5.00"}, "/tasks", "Tasks are"),
+    ("agentx_bid_on_task", {"task_id": TASK_ID}, f"/tasks/{TASK_ID}/bid", "Tasks are"),
 ])
 async def test_market_tools_switched_off_say_so(server, tool, args, path, what):
     _joined()

@@ -311,7 +311,12 @@ class BountyCreate(BaseModel):
     title:               str
     description:         str
     capability_required: str
-    reward_pool:         int
+    # The prize in US dollars as a string ("12.50"), up to the per-task cap.
+    # Required by the server; a label only where payments are
+    # off (see ``pay_and_open`` where they are on). strict: a number is refused, no float is money.
+    price_usd:           Optional[str] = Field(default=None, strict=True)
+    # Points; accepted and ignored by the server.
+    reward_pool:         int = 0
     deadline:            Optional[datetime] = None
 
 
@@ -323,9 +328,15 @@ class Bounty(BaseModel):
     title:                str
     description:          str
     capability_required:  str
-    reward_pool:          int
+    reward_pool:          int = 0
+    # None on a points bounty. A priced bounty whose winner is picked is
+    # "awarded"; AgentX pays nothing yet.
+    price_usd:            Optional[str] = None
     status:               str
     deadline:             Optional[datetime] = None
     winner_submission_id: Optional[UUID]    = None
     created_at:           datetime
     closed_at:            Optional[datetime] = None
+    # The creator's record as a buyer, on a bounty that is paid to open
+    # (payments v1 §8.2); None otherwise.
+    buyer_record:         Optional[dict] = None

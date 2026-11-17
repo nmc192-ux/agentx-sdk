@@ -69,6 +69,9 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+/** Sees the headers of every answer; `withToken` says whether this client's token was sent. */
+export type ResponseListener = (headers: Headers, withToken: boolean) => void;
+
 interface RawResponse {
   status: number;
   headers: Headers;
@@ -119,6 +122,7 @@ export class HttpClient {
   readonly tokens: TokenManager | undefined;
   readonly #fetch: typeof fetch;
   #labelers: string | undefined;
+  #onResponse: ResponseListener | undefined;
 
   constructor(options: HttpOptions = {}) {
     this.baseUrl = options.baseUrl ?? "https://api.agentx.social";
@@ -136,6 +140,14 @@ export class HttpClient {
    */
   setLabelers(dids: readonly string[] | undefined): void {
     this.#labelers = labelersHeaderValue(dids);
+  }
+
+  /**
+   * @internal Called with the headers of every answer, and whether the request carried
+   * this client's token. The client reads `AgentX-Notice` here.
+   */
+  setResponseListener(fn: ResponseListener | undefined): void {
+    this.#onResponse = fn;
   }
 
   get<T = unknown>(path: string, options: Omit<RequestOptions, "body" | "form" | "multipart"> = {}) {
@@ -185,10 +197,34 @@ export class HttpClient {
       token = await tokens.refreshAfterReject(token);
       response = await this.#send(method, path, options, token);
     }
+    this.#onResponse?.(response.headers, token !== undefined);
     if (response.status < 200 || response.status >= 300) {
       throw errorFromResponse(response.status, response.body, response.headers);
     }
     return { body: response.body as T, headers: response.headers };
+  }
+
+  /**
+   * Send one request and return the answer whatever its status: nothing is thrown for a
+   * 4xx or 5xx (pay-to-open reads a 402 and its `PAYMENT-REQUIRED` header). `headers` go
+   * out with the token (`PAYMENT-SIGNATURE`). The token is renewed and the request sent
+   * once more after a 401, as in {@link request}. A redirect is not followed: it is the
+   * answer (a signed payment goes to AgentX's own address and nowhere else).
+   */
+  async raw(
+    method: string,
+    path: string,
+    options: RequestOptions & { headers?: Record<string, string> } = {},
+  ): Promise<{ status: number; headers: Headers; body: unknown }> {
+    const tokens = options.auth === false ? undefined : this.tokens;
+    let token = tokens ? await tokens.accessToken() : undefined;
+    let response = await this.#send(method, path, options, token, options.headers, "manual");
+    if (response.status === 401 && tokens && token !== undefined && tokens.canRefresh) {
+      token = await tokens.refreshAfterReject(token);
+      response = await this.#send(method, path, options, token, options.headers, "manual");
+    }
+    this.#onResponse?.(response.headers, token !== undefined);
+    return response;
   }
 
   /** `POST /auth/token` with `grant_type=refresh_token`, never with a bearer header. */
@@ -205,8 +241,10 @@ export class HttpClient {
     path: string,
     options: RequestOptions,
     token: string | undefined,
+    extraHeaders?: Record<string, string>,
+    redirect?: RequestRedirect,
   ): Promise<RawResponse> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", ...extraHeaders };
     let body: string | FormData | undefined;
     if (options.multipart !== undefined) {
       body = options.multipart;
@@ -222,7 +260,9 @@ export class HttpClient {
 
     const url = joinUrl(this.baseUrl, path, options.query);
     return this.#withTimeout(options.signal, async (signal) => {
-      const response = await this.#fetch(url, { method, headers, body, signal });
+      const response = await this.#fetch(url, {
+        method, headers, body, signal, ...(redirect === undefined ? {} : { redirect }),
+      });
       const text = await response.text();
       let parsed: unknown = undefined;
       if (text !== "") {

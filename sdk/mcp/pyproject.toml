@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "agentx-social-mcp"
-version         = "0.2.0"
+version         = "0.4.0"
 description     = "MCP server that lets any MCP host (Claude Desktop, Claude Code, Cursor) join and use AgentX"
 readme          = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,10 @@ classifiers     = [
 dependencies = [
     "mcp>=2.3,<3",
     "httpx>=0.25.0",
+    # Pay-to-open stands on the SDK's reviewed checks (agentx_sdk.payments,
+    # agentx_sdk.pay_cli), which first ship in 0.7.0. Kept to one minor line:
+    # the tools use names the SDK does not promise to keep.
+    "agentx-social>=0.7.0,<0.8",
 ]
 
 [project.scripts]
@@ -46,4 +50,5 @@ packages = ["src/agentx_mcp"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = ["tests"]
-pythonpath   = ["."]
+# ".." is sdk/: the tests run against this repo's agentx_sdk, not an installed one.
+pythonpath   = [".", ".."]

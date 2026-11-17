@@ -7,6 +7,7 @@ import json
 import pathlib
 import tempfile
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -327,6 +328,69 @@ class TestAct:
         }
 
     @respx.mock
+    def test_priced_task_create_bid_list_and_accept(self):
+        create = respx.post(f"{BASE}/tasks").mock(
+            return_value=httpx.Response(201, json={"task_id": "t1", "price_usd": "12.50"})
+        )
+        bid = respx.post(f"{BASE}/tasks/t1/bid").mock(
+            return_value=httpx.Response(201, json={"bid_id": "b1", "bid_usd": "8.00"})
+        )
+        bids = respx.get(f"{BASE}/tasks/t1/bids").mock(
+            return_value=httpx.Response(200, json=[{"bid_id": "b1", "bid_usd": "8.00"}])
+        )
+        accept = respx.post(f"{BASE}/tasks/t1/accept").mock(
+            return_value=httpx.Response(200, json={"assignment_id": "a1", "status": "assigned"})
+        )
+        c = make_client()
+        assert c.create_task("review", {"q": 1}, price_usd="12.50")["price_usd"] == "12.50"
+        assert json.loads(create.calls.last.request.content) == {
+            "task_type": "review", "payload": {"q": 1}, "reward": 0, "price_usd": "12.50",
+        }
+        c.bid_on_task("t1", confidence=0.8, bid_usd="8.00")
+        assert json.loads(bid.calls.last.request.content) == {
+            "confidence": 0.8, "bid_price": 0, "bid_usd": "8.00",
+        }
+        assert c.list_task_bids("t1")[0]["bid_usd"] == "8.00"
+        assert bids.called
+        assert c.accept_task_bid("t1", "b1")["status"] == "assigned"
+        assert accept.calls.last.request.url.params["bid_id"] == "b1"
+
+    @respx.mock
+    @pytest.mark.parametrize("price", [12.5, 12, Decimal("12.50")])
+    def test_a_number_is_never_sent_as_a_price(self, price):
+        catch_all = respx.route()
+        c = make_client()
+        with pytest.raises(TypeError):
+            c.create_task("review", price_usd=price)
+        with pytest.raises(TypeError):
+            c.bid_on_task("t1", bid_usd=price)
+        assert not catch_all.called
+
+    @respx.mock
+    def test_withdraw_bid(self):
+        route = respx.delete(f"{BASE}/tasks/t1/bids/b1").mock(
+            return_value=httpx.Response(200, json={"task_id": "t1", "bid_id": "b1", "withdrawn": True})
+        )
+        assert make_client().withdraw_bid("t1", "b1")["withdrawn"] is True
+        assert route.called
+
+    @respx.mock
+    def test_withdraw_bid_ids_cannot_pick_the_route(self):
+        catch_all = respx.route()
+        with pytest.raises(ValueError):
+            make_client().withdraw_bid("t1", "../../wallets/faucet")
+        with pytest.raises(ValueError):
+            make_client().withdraw_bid("../x", "b1")
+        assert not catch_all.called
+
+    @respx.mock
+    def test_accept_task_bid_id_cannot_pick_the_route(self):
+        catch_all = respx.route()
+        with pytest.raises(ValueError):
+            make_client().accept_task_bid("../wallets/faucet", "b1")
+        assert not catch_all.called
+
+    @respx.mock
     def test_task_results_approve_and_reject(self):
         respx.get(f"{BASE}/tasks/abc/results").mock(
             return_value=httpx.Response(200, json=[{"verification_status": "pending"}])
@@ -487,6 +551,40 @@ class TestBounties:
         ))
         body = json.loads(route.calls[0].request.content)
         assert body["deadline"].startswith("2026-12-01T12:00")
+
+    @respx.mock
+    def test_priced_bounty_create_and_awarded_answer(self):
+        priced = bounty_payload(price_usd="12.50")
+        del priced["reward_pool"]  # an answer without points still reads
+        route = respx.post(f"{BASE}/markets/bounties").mock(
+            return_value=httpx.Response(201, json=priced)
+        )
+        from agentx_sdk import BountyCreate
+        b = make_client().create_bounty(BountyCreate(
+            title="Fix bug", description="...", capability_required="python", price_usd="12.50",
+        ))
+        assert b.price_usd == "12.50" and b.reward_pool == 0
+        assert json.loads(route.calls[0].request.content) == {
+            "title": "Fix bug", "description": "...", "capability_required": "python",
+            "price_usd": "12.50", "reward_pool": 0,
+        }
+        bid = str(uuid4())
+        respx.post(f"{BASE}/markets/bounties/{bid}/distribute").mock(
+            return_value=httpx.Response(200, json={
+                "reward_id": None, "bounty_id": bid, "submission_id": str(uuid4()),
+                "recipient_did": "did:agentx:w", "amount": 0, "price_usd": "12.50",
+                "distributed_at": "2026-11-14T00:00:00Z",
+            })
+        )
+        won = make_client().distribute_bounty_rewards(bid)
+        assert won["reward_id"] is None and won["price_usd"] == "12.50"
+
+    def test_bounty_price_must_be_a_string(self):
+        from pydantic import ValidationError
+
+        from agentx_sdk import BountyCreate
+        with pytest.raises(ValidationError):
+            BountyCreate(title="t", description="d", capability_required="x", price_usd=12.5)
 
     @respx.mock
     def test_list_bounties_pages(self):

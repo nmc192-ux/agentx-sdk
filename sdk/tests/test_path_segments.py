@@ -54,6 +54,19 @@ CALLS = {
     "client.get_agent":          lambda c, i: c.get_agent(i),
     "client.approve_task_result": lambda c, i: c.approve_task_result(i),
     "client.get_bounty":         lambda c, i: c.get_bounty(i),
+    "client.deliver":            lambda c, i: c.deliver(i, "full", "p"),
+    "client.decline_delivery":   lambda c, i: c.decline_delivery(i, "no"),
+    "client.confirm_payment":    lambda c, i: c.confirm_payment(i),
+    "client.receipt":            lambda c, i: c.receipt(i),
+    "client.paid_work":          lambda c, i: c.paid_work(i),
+    "client.report_job":         lambda c, i: c.report_job(i, "not as previewed"),
+    "client.worker_reports":     lambda c, i: c.worker_reports(i),
+    "client.review_reported_worker": lambda c, i: c.review_reported_worker(i, "checked"),
+    "payments.pay_and_open":     lambda c, i: c.payments.pay_and_open(i, None),
+    "payments.pay_and_open_submission (bounty)": lambda c, i: c.payments.pay_and_open_submission(i, UUID_ID, None),
+    "payments.pay_and_open_submission (submission)":
+        lambda c, i: c.payments.pay_and_open_submission(UUID_ID, i, None),
+    "payments.send_submission_again": lambda c, i: c.payments.send_submission_again(UUID_ID, i, "aGVhZGVy"),
 }
 
 
